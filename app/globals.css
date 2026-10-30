@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/*
+  Визуальное направление «Маршрут»:
+  прохладная бумага, глубокий чернильный синий, кобальт для действий
+  и подсолнух — как маркер и остановки на линии курса.
+*/
+@theme {
+  --color-paper: #f5f7fc;
+  --color-mist: #e4e9f7;
+  --color-ink: #0e1630;
+  --color-ink-soft: #4a5372;
+  --color-cobalt: #2a3fd6;
+  --color-cobalt-deep: #1f2fa8;
+  --color-sun: #ffc83d;
+  --color-coral: #ff6b4a;
+  --color-coral-deep: #c8432b;
+
+  --font-display: var(--font-unbounded), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-onest), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+p,
+li {
+  text-wrap: pretty;
+}
+
+/* Видимый фокус для клавиатуры */
+:focus-visible {
+  outline: 3px solid var(--color-cobalt);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.on-dark :focus-visible {
+  outline-color: var(--color-sun);
+}
+
+/* Жёлтый маркер под словами в заголовке */
+.marker {
+  background-image: linear-gradient(
+    transparent 58%,
+    var(--color-sun) 58%,
+    var(--color-sun) 92%,
+    transparent 92%
+  );
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding-inline: 0.08em;
+}
+
+/* Заглушка для картинки */
+.placeholder-stripes {
+  background-color: var(--color-mist);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 14px,
+    rgb(42 63 214 / 0.06) 14px 28px
+  );
+}
+
+/* Секции, к которым прыгаем по якорю, не прячутся под краем экрана */
+[id] {
+  scroll-margin-top: 1.5rem;
+}
