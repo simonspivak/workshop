@@ -40,7 +40,7 @@ export default function AboutPage() {
             ))}
           </div>
 
-          <ul className="mt-8 grid grid-cols-2 gap-6 border-y border-ink/10 py-6">
+          <ul className="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 border-y border-ink/10 py-6">
             {about.stats.map((stat) => (
               <li key={stat.label}>
                 <span className="block font-display text-4xl font-bold text-cobalt">
@@ -70,17 +70,25 @@ export default function AboutPage() {
           </h2>
           <p className="mt-3 text-lg text-ink-soft">{about.portfolioIntro}</p>
 
-          <ul className="mt-8 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-8 grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
             {about.portfolio.map((item) => (
-              <li key={item.title}>
-                <ImageSlot
-                  {...item.image}
-                  aspect="aspect-[16/10]"
-                  sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                  className="rounded-2xl"
-                />
-                <h3 className="mt-4 text-lg font-semibold break-words">{item.title}</h3>
-                <p className="mt-1 text-ink-soft">{item.text}</p>
+              <li key={item.title} className="border-t-2 border-ink pt-5">
+                {item.stat && (
+                  <p className="flex items-baseline gap-2">
+                    <span className="font-display text-4xl font-bold text-cobalt">{item.stat.value}</span>
+                    <span className="text-ink-soft">{item.stat.label}</span>
+                  </p>
+                )}
+                <h3 className="mt-3 text-lg font-semibold break-words">{item.title}</h3>
+                <p className="mt-2 leading-relaxed text-ink-soft">{item.text}</p>
+                {item.image && (
+                  <ImageSlot
+                    {...item.image}
+                    aspect="aspect-[2/1]"
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="mt-4 rounded-xl border border-ink/10 [&_img]:object-left-top"
+                  />
+                )}
                 {item.link && (
                   <a
                     href={item.link}

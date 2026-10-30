@@ -46,11 +46,14 @@ export type AccessOption = {
 };
 
 export type PortfolioItem = {
+  /** Крупная цифра в карточке, например { value: "48", label: "компаний" } */
+  stat?: { value: string; label: string };
   title: string;
   text: string;
   link?: string;
   linkLabel?: string;
-  image: ImageSpec;
+  /** Картинка необязательна: без неё карточка показывается без картинки */
+  image?: ImageSpec;
 };
 
 export type SiteContent = {
