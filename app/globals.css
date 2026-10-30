@@ -87,3 +87,17 @@ li {
 [id] {
   scroll-margin-top: 1.5rem;
 }
+
+/* Плавное появление блоков при прокрутке (components/Reveal.tsx) */
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal] {
+    transition:
+      opacity 0.7s ease-out,
+      transform 0.7s ease-out;
+  }
+
+  [data-reveal="hidden"] {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}

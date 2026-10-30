@@ -32,6 +32,7 @@ export function ImageSlot({
   sizes,
   priority = false,
   className = "",
+  imgClassName = "",
 }: {
   src: string;
   alt: string;
@@ -40,6 +41,7 @@ export function ImageSlot({
   sizes: string;
   priority?: boolean;
   className?: string;
+  imgClassName?: string;
 }) {
   const file = findPublicFile(src);
 
@@ -52,7 +54,7 @@ export function ImageSlot({
           fill
           sizes={sizes}
           priority={priority}
-          className="object-cover"
+          className={`object-cover ${imgClassName}`}
         />
       </div>
     );

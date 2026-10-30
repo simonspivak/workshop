@@ -53,13 +53,14 @@
 | --- | --- |
 | `hero.jpg` | первый экран |
 | `workshop-1.jpg` … `workshop-4.jpg` | четыре воркшопа |
-| `portfolio-sklad.jpg` | карточка SKLAD School в портфолио на `/about` |
+| `portfolio-mittelstand.jpg`, `portfolio-steam.jpg`, `portfolio-course.jpg`, `portfolio-cinema.jpg`, `portfolio-allages.jpg` | карточки портфолио на `/about` |
 
 Чтобы заменить картинку, загрузите файл **с тем же именем** в ту же папку.
 Если файла нет, сайт сам покажет заглушку «сюда картинка: …» с путём, куда его положить.
-Лучше всего картинки в пропорции 4:3 (портфолио — 16:10).
+Лучше всего картинки в пропорции 4:3, для портфолио — 16:9.
 
-Картинки для первого экрана и воркшопов сгенерированы через n8n (воркфлоу «J-Future: Generate Images v3»), модель Nano Banana Pro в kie.ai.
+Картинки сгенерированы через n8n (воркфлоу «J-Future: Generate Images v3»), модель Nano Banana Pro в kie.ai:
+для главной — иллюстрации, для портфолио — кинематографичные фото.
 Оригиналы лежат в корне Google Drive: файлы `iistart-*.jpg`.
 
 ## Как вставить календарь (Google Calendar)
