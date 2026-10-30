@@ -20,7 +20,8 @@ export const config = {
   // Короткая ссылка (calendar.app.google/…) — на сайте будет кнопка «Открыть календарь записи».
   // Ссылка из «Website embed» (…/appointments/schedules/…) — календарь встроится прямо в страницу.
   // Пусто — вместо календаря кнопка «Написать в Telegram».
-  bookingUrl: "https://calendar.app.google/aboUBTqH1yYfyu5h8",
+  bookingUrl:
+    "https://calendar.google.com/calendar/appointments/schedules/AcZssZ2akaDA6_qa1J4UleoaR7sunBVLhFFcdyOq-pwED0q4GKxb4qz0tKoXa438QSbLa3Ox82VFkkHI?gv=true",
 
   // Контакты. Указывайте без @ и без ссылок — сайт сам соберёт ссылку.
   contacts: {
