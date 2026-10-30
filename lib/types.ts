@@ -103,6 +103,9 @@ export type SiteContent = {
   booking: {
     title: string;
     text: string;
+    schedule: string;
+    calendarText: string;
+    calendarButton: string;
     iframeTitle: string;
     fallbackText: string;
     telegramButton: string;

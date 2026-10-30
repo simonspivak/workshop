@@ -17,15 +17,16 @@ export const config = {
   hostPhoto: "/senya.jpg",
 
   // Ссылка на страницу записи Google Calendar (Appointment schedule).
-  // ЗАГЛУШКА: пока пусто — вместо календаря показывается кнопка «Написать в Telegram».
-  // Как получить ссылку — в README, раздел «Как вставить календарь».
-  bookingUrl: "",
+  // Короткая ссылка (calendar.app.google/…) — на сайте будет кнопка «Открыть календарь записи».
+  // Ссылка из «Website embed» (…/appointments/schedules/…) — календарь встроится прямо в страницу.
+  // Пусто — вместо календаря кнопка «Написать в Telegram».
+  bookingUrl: "https://calendar.app.google/aboUBTqH1yYfyu5h8",
 
   // Контакты. Указывайте без @ и без ссылок — сайт сам соберёт ссылку.
   contacts: {
     telegram: "senyaspivak", // ПРОВЕРИТЬ
     instagram: "senya_ai", // ПРОВЕРИТЬ
     github: "simonspivak", // ПРОВЕРИТЬ
-    email: "", // ЗАГЛУШКА: впишите адрес, например "hello@example.com"
+    email: "simonzolanski@gmail.com",
   },
 };
