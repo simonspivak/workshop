@@ -1,22 +1,12 @@
 // Описание формы текстов сайта. Сене этот файл трогать не нужно:
 // он только проверяет, что в content/site.ts ничего не потерялось.
 
-export type ImageSpec = {
-  /** Путь к файлу внутри папки public, например "/images/hero.jpg" */
-  src: string;
-  /** Описание картинки для незрячих и поисковиков */
-  alt: string;
-  /** Что нарисовать, если файла ещё нет — показывается в заглушке */
-  placeholder: string;
-};
-
 export type Workshop = {
   title: string;
   oneLiner: string;
   skills: string[];
   tools: string[];
   takeaway: string;
-  image: ImageSpec;
 };
 
 export type SessionStep = {
@@ -47,13 +37,17 @@ export type AccessOption = {
 
 export type PortfolioItem = {
   /** Крупная цифра в карточке, например { value: "48", label: "компаний" } */
-  stat?: { value: string; label: string };
+  stat: { value: string; label: string };
   title: string;
   text: string;
-  link?: string;
-  linkLabel?: string;
-  /** Картинка необязательна: без неё карточка показывается без картинки */
-  image?: ImageSpec;
+};
+
+export type ChatMessage = {
+  /** "me" — сообщение участника (справа), "ai" — ответ ИИ (слева) */
+  from: "me" | "ai";
+  text: string;
+  /** Маленькие «файлы» под сообщением */
+  chips?: string[];
 };
 
 export type SiteContent = {
@@ -71,8 +65,9 @@ export type SiteContent = {
     outcomeTitle: string;
     outcomes: string[];
     secondaryLink: string;
-    image: ImageSpec;
+    chat: { title: string; status: string; messages: ChatMessage[] };
   };
+  marquee: string[];
   route: {
     title: string;
     intro: string;

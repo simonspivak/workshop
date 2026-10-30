@@ -19,7 +19,7 @@ function SourceLink({ href, label }: { href: string; label: string }) {
 
 const optionStyles: Record<AccessOption["verdict"], string> = {
   neutral: "border border-ink/15 bg-white",
-  recommended: "on-dark bg-cobalt text-white md:-my-4 md:py-10",
+  recommended: "on-dark bg-violet text-white md:-my-4 md:py-10",
   "not-recommended": "border-2 border-coral/60 bg-white",
 };
 
@@ -47,7 +47,7 @@ export function Access() {
   const { access } = site;
 
   return (
-    <section aria-labelledby="access-title" className="bg-mist">
+    <section aria-labelledby="access-title" className="bg-lavender">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
         <div className="max-w-3xl">
           <h2 id="access-title" className="text-3xl font-bold sm:text-4xl">
@@ -80,7 +80,7 @@ export function Access() {
                 </div>
                 <p className="text-ink-soft">
                   {fact.what}{" "}
-                  <span className="text-cobalt">
+                  <span className="text-violet">
                     <SourceLink href={fact.source} label={access.sourceLabel} />
                   </span>
                 </p>
@@ -105,7 +105,7 @@ export function Access() {
                 <h4 className="mt-4 font-display text-xl font-semibold">{option.title}</h4>
                 <p
                   className={`mt-1 font-medium ${
-                    option.verdict === "recommended" ? "text-sun" : "text-cobalt"
+                    option.verdict === "recommended" ? "text-sun" : "text-violet"
                   }`}
                 >
                   {option.price}
@@ -122,7 +122,7 @@ export function Access() {
                   )}
                 </div>
                 {option.source && (
-                  <p className="mt-auto pt-4 text-cobalt">
+                  <p className="mt-auto pt-4 text-violet">
                     <SourceLink href={option.source} label={access.sourceLabel} />
                   </p>
                 )}

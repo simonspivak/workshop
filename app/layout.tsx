@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Onest, Unbounded } from "next/font/google";
+import { JetBrains_Mono, Onest, Unbounded } from "next/font/google";
 import { config } from "@/content/config";
 import { site } from "@/content/site";
 import { Header } from "@/components/Header";
@@ -10,6 +10,12 @@ const unbounded = Unbounded({
   variable: "--font-unbounded",
   subsets: ["latin", "cyrillic"],
   weight: ["500", "600", "700"],
+});
+
+const jetbrains = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500"],
 });
 
 const onest = Onest({
@@ -27,14 +33,14 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f5f7fc",
+  themeColor: "#f6f6fb",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="ru"
-      className={`${unbounded.variable} ${onest.variable} antialiased`}
+      className={`${unbounded.variable} ${onest.variable} ${jetbrains.variable} antialiased`}
     >
       <body className="flex min-h-dvh flex-col bg-paper text-ink">
         <a

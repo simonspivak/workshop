@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 const styles = {
   primary:
-    "bg-cobalt text-white hover:bg-cobalt-deep",
+    "bg-violet text-white hover:bg-violet-deep",
   sun: "bg-sun text-ink hover:bg-white",
 };
 

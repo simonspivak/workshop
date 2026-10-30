@@ -64,9 +64,9 @@ export function ImageSlot({
     <div
       role="img"
       aria-label={alt}
-      className={`placeholder-stripes flex flex-col items-center justify-center gap-2 border-2 border-dashed border-cobalt/30 p-4 text-center ${aspect} ${className}`}
+      className={`placeholder-stripes flex flex-col items-center justify-center gap-2 border-2 border-dashed border-violet/30 p-4 text-center ${aspect} ${className}`}
     >
-      <ImageIcon aria-hidden="true" className="size-7 text-cobalt" strokeWidth={1.5} />
+      <ImageIcon aria-hidden="true" className="size-7 text-violet" strokeWidth={1.5} />
       <p className="max-w-[28ch] text-sm font-medium text-ink">
         {site.placeholderPrefix} {placeholder}
       </p>
