@@ -2,8 +2,8 @@ import { site } from "@/content/site";
 
 // Цвет каждого шага — и в полоске времени, и в номере
 const stepColors = [
-  "bg-mist text-ink ring-1 ring-inset ring-cobalt/30",
-  "bg-cobalt text-white",
+  "bg-lavender text-ink ring-1 ring-inset ring-violet/30",
+  "bg-violet text-white",
   "bg-sun text-ink",
   "bg-ink text-white",
 ];

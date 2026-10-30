@@ -28,7 +28,7 @@ export function Booking() {
         </h2>
         <p className="mt-4 text-lg leading-relaxed text-ink-soft">{booking.text}</p>
         <p className="mt-4 flex gap-3 text-lg leading-relaxed">
-          <Clock aria-hidden="true" className="mt-1 size-5 shrink-0 text-cobalt" />
+          <Clock aria-hidden="true" className="mt-1 size-5 shrink-0 text-violet" />
           <span>{booking.schedule}</span>
         </p>
       </div>

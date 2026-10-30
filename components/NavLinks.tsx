@@ -16,8 +16,8 @@ export function NavLinks({ items }: { items: { label: string; href: string }[] }
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`rounded-full px-2.5 py-2 font-medium whitespace-nowrap sm:px-3 transition-colors hover:bg-mist ${
-                  active ? "bg-mist text-cobalt" : ""
+                className={`rounded-full px-2.5 py-2 font-medium whitespace-nowrap sm:px-3 transition-colors hover:bg-lavender ${
+                  active ? "bg-lavender text-violet" : ""
                 }`}
               >
                 {item.label}

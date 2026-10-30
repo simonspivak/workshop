@@ -19,14 +19,14 @@ export default function WorkshopsPage() {
       <ol className="mt-6 divide-y divide-ink/10 border-y border-ink/10">
         {site.route.items.map((workshop, i) => (
           <li key={workshop.title} className="flex items-baseline gap-4 py-5">
-            <span className="font-display text-xl font-bold text-cobalt">{i + 1}</span>
+            <span className="font-display text-xl font-bold text-violet">{i + 1}</span>
             <span className="font-display text-xl font-semibold">{workshop.title}</span>
           </li>
         ))}
       </ol>
 
-      <p className="mt-8 flex items-start gap-3 rounded-2xl bg-mist p-5">
-        <Clock aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-cobalt" />
+      <p className="mt-8 flex items-start gap-3 rounded-2xl bg-lavender p-5">
+        <Clock aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-violet" />
         <span>{page.note}</span>
       </p>
     </section>

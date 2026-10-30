@@ -1,23 +1,26 @@
 @import "tailwindcss";
 
 /*
-  Визуальное направление «Маршрут»:
-  прохладная бумага, глубокий чернильный синий, кобальт для действий
-  и подсолнух — как маркер и остановки на линии курса.
+  Визуальное направление: простой и дерзкий, для зумеров.
+  Светлый фон с лиловым свечением, крупный шрифт, моно-подписи,
+  жёлтые «наклейки» и бегущая строка. Без картинок — только типографика и цвет.
 */
 @theme {
-  --color-paper: #f5f7fc;
-  --color-mist: #e4e9f7;
-  --color-ink: #0e1630;
-  --color-ink-soft: #4a5372;
-  --color-cobalt: #2a3fd6;
-  --color-cobalt-deep: #1f2fa8;
-  --color-sun: #ffc83d;
+  --color-paper: #f6f6fb;
+  --color-lavender: #eceaff;
+  --color-glow: #d9d4ff;
+  --color-ink: #0b0b1a;
+  --color-ink-soft: #55566e;
+  --color-violet: #4338f5;
+  --color-violet-deep: #3426d6;
+  --color-sun: #ffd43b;
+  --color-pink: #ff8ad1;
   --color-coral: #ff6b4a;
   --color-coral-deep: #c8432b;
 
   --font-display: var(--font-unbounded), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-onest), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
 html {
@@ -51,7 +54,7 @@ li {
 
 /* Видимый фокус для клавиатуры */
 :focus-visible {
-  outline: 3px solid var(--color-cobalt);
+  outline: 3px solid var(--color-violet);
   outline-offset: 3px;
   border-radius: 6px;
 }
@@ -75,7 +78,7 @@ li {
 
 /* Заглушка для картинки */
 .placeholder-stripes {
-  background-color: var(--color-mist);
+  background-color: var(--color-lavender);
   background-image: repeating-linear-gradient(
     -45deg,
     transparent 0 14px,
@@ -86,4 +89,56 @@ li {
 /* Секции, к которым прыгаем по якорю, не прячутся под краем экрана */
 [id] {
   scroll-margin-top: 1.5rem;
+}
+
+/* Плавное появление блоков при прокрутке (components/Reveal.tsx) */
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal] {
+    transition:
+      opacity 0.7s ease-out,
+      transform 0.7s ease-out;
+  }
+
+  [data-reveal="hidden"] {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+/* Бегущая строка с инструментами */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-track {
+  animation: marquee 40s linear infinite;
+}
+
+/* Сообщения в чате на первом экране появляются по очереди */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pop-in {
+    animation: pop-in 0.45s ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none;
+  }
 }

@@ -33,7 +33,7 @@ export function ContactLinks({
   ].filter((link) => !!link);
 
   const muted = tone === "dark" ? "text-white/60" : "text-ink-soft";
-  const hover = tone === "dark" ? "hover:text-sun" : "hover:text-cobalt";
+  const hover = tone === "dark" ? "hover:text-sun" : "hover:text-violet";
 
   return (
     <ul className={`space-y-3 ${className}`}>

@@ -44,12 +44,38 @@ export const site: SiteContent = {
       "схема, как превратить это в канал и заработок",
     ],
     secondaryLink: "Посмотреть маршрут курса",
-    image: {
-      src: "/images/hero.jpg",
-      alt: "Иллюстрация: молодые люди на видеозвонке создают картинки, музыку и бота с помощью ИИ",
-      placeholder: "участники в окошках Zoom делают картинки, музыку и бота",
+    // Мокап чата справа от заголовка
+    chat: {
+      title: "ИИ-ассистент",
+      status: "в сети",
+      messages: [
+        { from: "me", text: "сделай персонажа для reels и трек к нему" },
+        {
+          from: "ai",
+          text: "готово ✨ персонаж и 30 секунд музыки",
+          chips: ["🎨 персонаж.png", "🎵 трек.mp3"],
+        },
+        { from: "me", text: "а теперь бота, чтобы подписчики получали стикеры с ним" },
+        { from: "ai", text: "бот запущен 🤖 зови друзей", chips: ["t.me/твой_бот"] },
+      ],
     },
   },
+
+  // Бегущая строка под первым экраном
+  marquee: [
+    "Gemini",
+    "Claude",
+    "NotebookLM",
+    "Google Flow",
+    "Suno",
+    "ElevenLabs",
+    "CapCut",
+    "Google AI Studio",
+    "Telegram",
+    "GitHub",
+    "Vercel",
+    "Instagram",
+  ],
 
   // ── Главная: четыре воркшопа ───────────────────────────────
   route: {
@@ -74,11 +100,6 @@ export const site: SiteContent = {
         tools: ["Gemini", "Claude", "NotebookLM"],
         takeaway:
           "Личная шпаргалка запросов и понимание, в какую сторону ИИ копать дальше.",
-        image: {
-          src: "/images/workshop-1.jpg",
-          alt: "Иллюстрация: подросток на развилке трёх дорог — учёба, автоматизация и контент",
-          placeholder: "развилка из трёх дорог: учёба, автоматизация, контент",
-        },
       },
       {
         title: "ИИ для контента",
@@ -92,11 +113,6 @@ export const site: SiteContent = {
         ],
         tools: ["Google Flow", "Suno", "ElevenLabs", "CapCut"],
         takeaway: "Свой персонаж и готовый короткий ролик с музыкой и голосом.",
-        image: {
-          src: "/images/workshop-2.jpg",
-          alt: "Иллюстрация: студия контента — телефон на штативе, наушники, микрофон и мультяшный персонаж",
-          placeholder: "студия контента: телефон на штативе, микрофон, персонаж",
-        },
       },
       {
         title: "Свой бот и первый проект",
@@ -110,11 +126,6 @@ export const site: SiteContent = {
         ],
         tools: ["Google AI Studio", "Telegram", "GitHub", "Vercel"],
         takeaway: "Работающий бот или мини-приложение со своей ссылкой.",
-        image: {
-          src: "/images/workshop-3.jpg",
-          alt: "Иллюстрация: человек за ноутбуком собирает бота, базу данных и публикацию в облако",
-          placeholder: "бот, база данных и облако, соединённые линиями",
-        },
       },
       {
         title: "Своя воронка продаж",
@@ -129,11 +140,6 @@ export const site: SiteContent = {
         tools: ["Instagram", "Telegram", "CRM", "всё из воркшопов 1–3"],
         takeaway:
           "Схема своей воронки: контент → канал с ботом → CRM → реклама и заработок.",
-        image: {
-          src: "/images/workshop-4.jpg",
-          alt: "Иллюстрация: воронка, в которую попадают ролики и посты, а на выходе — монеты и график роста",
-          placeholder: "воронка: ролики и посты сверху, монеты и график снизу",
-        },
       },
     ],
     finishTitle: "Финиш",
@@ -325,11 +331,6 @@ export const site: SiteContent = {
         stat: { value: "39", label: "уроков" },
         title: "Курс по ИИ для психологов на SKLAD School",
         text: "Авторский курс для психологов и всех, кто работает с людьми. Сделан вместе с SKLAD School — платформой, у которой около 50 000 выпускников.",
-        image: {
-          src: "/images/portfolio-sklad.jpg",
-          alt: "Скриншот сайта SKLAD School: «С 2021 года учим работе с нейросетями»",
-          placeholder: "скриншот курса на SKLAD School",
-        },
       },
       {
         stat: { value: "2×", label: "победа, 2025" },

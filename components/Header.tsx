@@ -12,7 +12,7 @@ export function Header() {
       >
         <span
           aria-hidden="true"
-          className="size-3 shrink-0 rounded-full bg-sun ring-4 ring-cobalt"
+          className="size-3 shrink-0 rounded-full bg-sun ring-4 ring-violet"
         />
         {config.courseName}
       </Link>
