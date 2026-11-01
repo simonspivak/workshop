@@ -30,6 +30,12 @@ export const metadata: Metadata = {
     template: `%s · ${config.courseName}`,
   },
   description: site.meta.description,
+  // Сайт открывается только по ссылке и не попадает в поиск
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
 };
 
 export const viewport: Viewport = {

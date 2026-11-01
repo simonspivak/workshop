@@ -40,11 +40,11 @@ export function ContactLinks({
       {links.map(({ icon: Icon, label, value, href }) => (
         <li key={label} className="flex items-center gap-3">
           <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} />
-          <span className={`w-24 shrink-0 text-sm ${muted}`}>{label}</span>
+          <span className={`w-20 shrink-0 text-sm sm:w-24 ${muted}`}>{label}</span>
           {href ? (
             <a
               href={href}
-              className={`font-medium underline-offset-4 hover:underline ${hover}`}
+              className={`min-w-0 font-medium [overflow-wrap:anywhere] underline-offset-4 hover:underline ${hover}`}
               target={href.startsWith("http") ? "_blank" : undefined}
               rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
             >

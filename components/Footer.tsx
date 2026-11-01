@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { config } from "@/content/config";
 import { site } from "@/content/site";
 import { ContactLinks } from "@/components/ContactLinks";
@@ -9,8 +10,11 @@ export function Footer() {
         <div>
           <p className="font-display text-lg font-semibold">{config.courseName}</p>
           <p className="mt-2 max-w-md text-white/75">{site.footer.note}</p>
-          <p className="mt-6 text-sm text-white/60">
-            © {config.hostName}
+          <p className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-sm text-white/60">
+            <span>© {config.hostName}</span>
+            <Link href="/privacy" className="underline underline-offset-4 hover:text-sun">
+              {site.footer.privacyLink}
+            </Link>
           </p>
         </div>
         <div>

@@ -5,10 +5,10 @@ import { NavLinks } from "@/components/NavLinks";
 
 export function Header() {
   return (
-    <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+    <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
       <Link
         href="/"
-        className="flex items-center gap-2 font-display text-sm leading-tight font-semibold sm:text-base"
+        className="flex min-w-0 items-center gap-2 font-display text-[13px] leading-tight font-semibold min-[400px]:text-sm sm:text-base"
       >
         <span
           aria-hidden="true"

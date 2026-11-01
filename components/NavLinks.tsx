@@ -8,7 +8,7 @@ export function NavLinks({ items }: { items: { label: string; href: string }[] }
 
   return (
     <nav aria-label="Основное меню">
-      <ul className="flex items-center gap-1 text-sm sm:gap-2 sm:text-base">
+      <ul className="flex items-center gap-0.5 text-[13px] min-[400px]:text-sm sm:gap-2 sm:text-base">
         {items.map((item) => {
           const active = pathname === item.href;
           return (
@@ -16,7 +16,7 @@ export function NavLinks({ items }: { items: { label: string; href: string }[] }
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`rounded-full px-2.5 py-2 font-medium whitespace-nowrap sm:px-3 transition-colors hover:bg-lavender ${
+                className={`rounded-full px-2 py-2 font-medium whitespace-nowrap min-[400px]:px-2.5 sm:px-3 transition-colors hover:bg-lavender ${
                   active ? "bg-lavender text-violet" : ""
                 }`}
               >
