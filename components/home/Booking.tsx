@@ -3,6 +3,7 @@ import { config } from "@/content/config";
 import { site } from "@/content/site";
 import { ButtonLink } from "@/components/ButtonLink";
 import { telegramUrl } from "@/components/ContactLinks";
+import { CalendarEmbed } from "@/components/home/CalendarEmbed";
 
 /**
  * Встроить в страницу Google разрешает только ссылку из «Website embed»
@@ -34,11 +35,13 @@ export function Booking() {
       </div>
 
       {iframeSrc ? (
-        <iframe
+        <CalendarEmbed
           src={iframeSrc}
           title={booking.iframeTitle}
-          loading="lazy"
-          className="mt-8 h-[680px] w-full rounded-2xl border border-ink/10 bg-white"
+          text={booking.calendarShowText}
+          button={booking.calendarShowButton}
+          privacyNote={booking.calendarPrivacyNote}
+          privacyLink={booking.privacyLink}
         />
       ) : (
         <div className="on-dark mt-8 flex flex-col items-start gap-6 rounded-2xl bg-ink p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-8">

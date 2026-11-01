@@ -104,6 +104,10 @@ export type SiteContent = {
     schedule: string;
     calendarText: string;
     calendarButton: string;
+    calendarShowText: string;
+    calendarShowButton: string;
+    calendarPrivacyNote: string;
+    privacyLink: string;
     iframeTitle: string;
     fallbackText: string;
     telegramButton: string;
@@ -111,6 +115,7 @@ export type SiteContent = {
   footer: {
     contactsTitle: string;
     note: string;
+    privacyLink: string;
   };
   workshopsPage: {
     title: string;
