@@ -124,8 +124,16 @@
         "Сделай кадр [номер] проще: одно действие, одно место, без толпы и без быстрых трюков. Остальное не меняй."
       ],
       "aiActions": [
-        { "type": "text", "model": "claude-haiku-5-5", "stars": 3 },
-        { "type": "text", "model": "claude-haiku-5-5", "stars": 1 }
+        {
+          "type": "text",
+          "model": "claude-haiku-5-5",
+          "stars": 3
+        },
+        {
+          "type": "text",
+          "model": "claude-haiku-5-5",
+          "stars": 1
+        }
       ],
       "doneWhen": "В чате комнаты лежит сценарий из 4 кадров (у каждого кадра есть хозяин), название серии и все реплики закадрового голоса."
     },
@@ -149,10 +157,26 @@
         "Используй персонажа с референса: та же форма, цвета, одежда и стиль, во внешности ничего не меняй.\nВертикальный кадр 9:16. [Имя] [одно действие или поза из сценария] в [место], [время суток и свет].\nПлан: [общий — виден в полный рост / средний — по пояс / крупный — лицо].\nПростой, не перегруженный фон, персонаж в центре, вокруг есть место для движения. Без текста."
       ],
       "aiActions": [
-        { "type": "text", "model": "claude-haiku-5-5", "stars": 1 },
-        { "type": "image", "model": "nano-banana-2-1", "stars": 5 },
-        { "type": "image_edit", "model": "nano-banana-2-1", "stars": 5 },
-        { "type": "image_edit", "model": "nano-banana-2-1", "stars": 5 }
+        {
+          "type": "text",
+          "model": "claude-haiku-5-5",
+          "stars": 1
+        },
+        {
+          "type": "image",
+          "model": "nano-banana-2-1",
+          "stars": 5
+        },
+        {
+          "type": "image_edit",
+          "model": "nano-banana-2-1",
+          "stars": 5
+        },
+        {
+          "type": "image_edit",
+          "model": "nano-banana-2-1",
+          "stars": 5
+        }
       ],
       "doneWhen": "В Карточке персонажа лежит лист (4 ракурса + 3 эмоции, черты совпадают), а в галерее группы — твой кадр 9:16, где персонаж узнаётся с первого взгляда."
     },
@@ -172,9 +196,21 @@
         "Персонаж с картинки повторяет движения человека из видео.\nВнешность, пропорции и одежда — как на картинке, без искажений рук и лица. Фон с картинки.\nNo distortion, the character's movements are consistent with the video."
       ],
       "aiActions": [
-        { "type": "video", "model": "bytedance/seedance-2-mini", "stars": 25 },
-        { "type": "video", "model": "kling-2.6/motion-control", "stars": 70 },
-        { "type": "video", "model": "wan/2-2-animate-move", "stars": 40 }
+        {
+          "type": "video",
+          "model": "bytedance/seedance-2-mini",
+          "stars": 25
+        },
+        {
+          "type": "motion",
+          "model": "kling-2.6/motion-control",
+          "stars": 70
+        },
+        {
+          "type": "motion",
+          "model": "wan/2-2-animate-move",
+          "stars": 80
+        }
       ],
       "doneWhen": "У каждого есть 5-секундный клип своего персонажа без сильных искажений, у группы — хотя бы один клип с перенесённым движением. Видео не успело — для монтажа годится кадр-картинка с приближением."
     },
@@ -194,8 +230,16 @@
         "Манера: [как диктор трейлера — низко, медленно, с паузами / быстро и восторженно, как спортивный комментатор / шёпотом, как будто рассказываешь секрет].\nЯзык: русский.\nТекст: «[реплики из сценария, до 50 слов]»"
       ],
       "aiActions": [
-        { "type": "music", "model": "ai-music-api/generate", "stars": 15 },
-        { "type": "voice", "model": "google/gemini-3-8-flash-tts", "stars": 2 }
+        {
+          "type": "music",
+          "model": "ai-music-api/generate",
+          "stars": 15
+        },
+        {
+          "type": "voice",
+          "model": "google/gemini-3-8-flash-tts",
+          "stars": 2
+        }
       ],
       "doneWhen": "В галерее группы лежат выбранный трек (до 30 с) и файл озвучки до 25 с, и все в группе их послушали."
     },
@@ -216,7 +260,11 @@
         "Напиши подпись к Reels для серии «[название]»: 1–2 строки с интригой и 3 хэштега.\nВ конце строка: «Сделано с ИИ». Без реальных имён и брендов."
       ],
       "aiActions": [
-        { "type": "text", "model": "claude-haiku-5-5", "stars": 1 }
+        {
+          "type": "text",
+          "model": "claude-haiku-5-5",
+          "stars": 1
+        }
       ],
       "doneWhen": "Ролик 15–25 с, 9:16, лежит в галерее группы. Первый кадр — крючок, видны все персонажи группы и каждый узнаётся. Есть музыка и голос, голос не тонет в музыке. В конце метка «Сделано с ИИ». Монтажёр может включить ролик в Zoom со звуком."
     },
@@ -236,9 +284,21 @@
         "Персонаж с картинки 1 и персонаж с картинки 2 встречаются в [место]: [одно действие]. Внешность обоих как на референсах, ничего не меняй. Вертикальный кадр 9:16, оба видны целиком, простой фон. Без текста."
       ],
       "aiActions": [
-        { "type": "image_edit", "model": "nano-banana-2-1", "stars": 5 },
-        { "type": "voice", "model": "google/gemini-3-8-flash-tts", "stars": 2 },
-        { "type": "video", "model": "infinitalk/from-audio", "stars": 40 }
+        {
+          "type": "image_edit",
+          "model": "nano-banana-2-1",
+          "stars": 5
+        },
+        {
+          "type": "voice",
+          "model": "google/gemini-3-8-flash-tts",
+          "stars": 2
+        },
+        {
+          "type": "lipsync",
+          "model": "kling/ai-avatar-standard",
+          "stars": 60
+        }
       ],
       "doneWhen": "В ролике есть кадр, где персонаж сам произносит реплику с попаданием в губы, или общий кадр двух героев, где оба узнаются."
     }

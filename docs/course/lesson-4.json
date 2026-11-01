@@ -358,8 +358,8 @@
         },
         {
           "type": "video",
-          "model": "veo3_lite",
-          "stars": 40
+          "model": "bytedance/seedance-2-mini",
+          "stars": 25
         },
         {
           "type": "text",

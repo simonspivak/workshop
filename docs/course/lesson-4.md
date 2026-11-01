@@ -736,7 +736,7 @@ Simple bright background in the character's palette: [palette]. Character center
 ### 6.7. Задание 7. Бонус для тех, кто успел (команда, по желанию)
 
 - **Джингл канала** (music, 15★): Suno, инструментал 10–15 с в стиле проекта. Промпт как П7 урока 2: жанр, темп, настроение, без имён артистов.
-- **Тизер канала со звуком, только 18+** (video, 40★): `veo3_lite`, 8 с, 720p. «Все персонажи команды выглядывают из-за угла и кричат название канала». Google-модель, поэтому только для взрослых [[kie-models.md, §2.3, §3.8](../research/kie-models.md)].
+- **Тизер канала со звуком** (video, 25★): `bytedance/seedance-2-mini`, 5 с, 480p, со звуком. «Все персонажи команды выглядывают из-за угла и кричат название канала».
 - **Нативный квиз в канал** (text, 1★): попроси ИИ сделать 1 вопрос-викторину для рубрики `#квиз`. В Telegram это опрос типа quiz [[telegram.md, §1.2](../research/telegram.md)].
 
 ---
@@ -998,7 +998,6 @@ Simple bright background in the character's palette: [palette]. Character center
 | То же в безопасном режиме без Google | image_edit | `flux-3/klein-edit-image` | 1,6 | **2** [по аналогии с уроком 2, предположение] | замена для 14–17 |
 | Картинка с нуля (товар для Банка брендов) | image | `nano-banana-2-1` | 4 | **5** | подготовка ведущего |
 | Видео 5 с, 480p | video | `bytedance/seedance-2-mini` | 19 | **25** | В4 |
-| Видео 8 с со звуком, 720p (18+) | video | `veo3_lite` | 30 | **40** | бонус |
 | Озвучка ≤ 30 с | voice | `google/gemini-3-8-flash-tts` | ~1 | **2** | В5 |
 | Музыка (1 запуск = 2 трека) | music | Suno V5 (`ai-music-api/generate`) | 12 | **15** | бонус |
 | Автопроверка теста | — | код на сервере | 0 | **0** | тест |
@@ -1204,7 +1203,7 @@ Claude, Google Flow и ElevenLabs младшим не давать: там 18+ (
 
 ### Накануне
 
-- [ ] Сверить цены с kie.ai/pricing: `nano-banana-2-1`, `flux-3/klein-edit-image`, `seedance-2-mini`, `veo3_lite`, `gemini-3-8-flash-tts`, Suno, `claude-haiku-5-5`. При необходимости обновить прайс в звёздах [[kie-models.md, §3.10](../research/kie-models.md)].
+- [ ] Сверить цены с kie.ai/pricing: `nano-banana-2-1`, `flux-3/klein-edit-image`, `seedance-2-mini`, `gemini-3-8-flash-tts`, Suno, `claude-haiku-5-5`. При необходимости обновить прайс в звёздах [[kie-models.md, §3.10](../research/kie-models.md)].
 - [ ] Генеральный прогон (~60 кр):
   - плашка с латиницей и с кириллицей — что читается лучше;
   - слайд 4:5;

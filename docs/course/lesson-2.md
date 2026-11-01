@@ -398,7 +398,7 @@ instrumental, strong beat from the first second, short intro
 - **Говорящий финал (lip sync).** Герой финального кадра сам произносит последнюю реплику:
   1. Портрет анфас, рот закрыт (П3 с планом «крупный»).
   2. Отдельная озвучка ≤ 10 с (П8, 2 зв.).
-  3. «Говорящая голова»: `infinitalk/from-audio`, 480p, 40 зв. за 10 с. Длинный текст режь на куски по 10–15 с: на длинной дорожке губы «плывут» [[Cliprise](https://www.cliprise.app/learn/guides/getting-started/ai-avatar-video-generator-complete-guide-2026); [kie-models.md, §2.5](../research/kie-models.md)].
+  3. «Говорящая голова»: `kling/ai-avatar-standard`, 60 зв. за ~6 с (проверено 01.11.2026: 48 кредитов; `infinitalk/from-audio` на kie сейчас падает с ошибкой даже на примере из документации). Длинный текст режь на куски по 10–15 с: на длинной дорожке губы «плывут» [[Cliprise](https://www.cliprise.app/learn/guides/getting-started/ai-avatar-video-generator-complete-guide-2026); [kie-models.md, §2.5](../research/kie-models.md)].
 - **Общий кадр.** Два героя в одной сцене: П3, но в референс кладём **два листа** и пишем «персонаж с картинки 1 и персонаж с картинки 2…» (image_edit, 5 зв.).
 
 ---
@@ -493,15 +493,14 @@ instrumental, strong beat from the first second, short intro
 | Правка / кадр с референсом | image_edit | `nano-banana-2-1` + `image_input` | 4 | **5** | П2, П3 |
 | Эконом-картинка / правка (не Google) | image / image_edit | `flux-3/klein-text-to-image` / `flux-3/klein-edit-image` | 1,6 | **2** (для правки — по аналогии [предположение]) | замена в безопасном режиме |
 | Видео 5 с, 480p | video | `bytedance/seedance-2-mini` | 19 | **25** | П5 |
-| Видео 8 с со звуком, 720p (18+) | video | `veo3_lite` | 30 | **40** | П5, вариант для взрослых |
-| Перенос движения 5 с, 720p | video | `kling-2.6/motion-control` | 55 | **70** | П6 (18+) |
-| Перенос движения 5 с, 480p | video | `wan/2-2-animate-move` | 30 | **40** [предположение: в прайс-листе нет, 30 кр + 33%] | П6 (безопасный режим) |
-| Говорящая голова 10 с, 480p | video | `infinitalk/from-audio` | 30 | **40** | бонус |
+| Перенос движения 5 с, 720p | motion | `kling-2.6/motion-control` | 55 | **70** | П6 (18+) |
+| Перенос движения 5 с, 720p | motion | `wan/2-2-animate-move` | 62,5 | **80** (по документации kie только 720p, 12,5 кр/с) | П6 (безопасный режим) |
+| Говорящая голова ~6 с | lipsync | `kling/ai-avatar-standard` | 48 (проверено) | **60** | бонус |
 | Музыка (1 запуск = 2 трека) | music | Suno V5 (`ai-music-api/generate`) | 12 | **15** | П7 |
 | Озвучка 30 с | voice | `google/gemini-3-8-flash-tts` | ~1 | **2** | П8 |
 | Автопроверка теста | text | `gpt-6-luna` | ~0,04 | **0** | тест |
 
-Источник кредитов: прайс-фид kie.ai от 30.10.2026 [[kie-models.md, §2, §4.2](../research/kie-models.md)]. Страницы моделей: [nano-banana-2-1](https://kie.ai/nano-banana-2-1), [seedance-2-0-mini](https://kie.ai/seedance-2-0-mini), [kling-2.6-motion-control](https://kie.ai/kling-2.6-motion-control), [wan-animate](https://kie.ai/wan-animate), [infinitalk](https://kie.ai/infinitalk), [gemini-3.8-flash-tts](https://kie.ai/gemini-3.8-flash-tts), [suno-api](https://kie.ai/suno-api), [flux-3](https://kie.ai/flux-3), [claude-haiku-5-5](https://kie.ai/claude-haiku-5-5).
+Источник кредитов: прайс-фид kie.ai от 30.10.2026 [[kie-models.md, §2, §4.2](../research/kie-models.md)]. Страницы моделей: [nano-banana-2-1](https://kie.ai/nano-banana-2-1), [seedance-2-0-mini](https://kie.ai/seedance-2-0-mini), [kling-2.6-motion-control](https://kie.ai/kling-2.6-motion-control), [wan-animate](https://kie.ai/wan-animate), [infinitalk](https://kie.ai/infinitalk), [gemini-3.8-flash-tts](https://kie.ai/gemini-3.8-flash-tts), [suno-api](https://kie.ai/suno-api), [flux-3](https://kie.ai/flux-3), [claude-haiku-5-5](https://kie.ai/claude-haiku-5-5). Цены основных моделей сверены живыми запросами 01.11.2026: [kie-gateway.md](../kie-gateway.md).
 
 ### Бюджет на участника
 
@@ -598,7 +597,7 @@ Motion control бесплатно: у Kling (kling.ai) есть бесплатн
 
 - Генерации возможны только после отметки согласия родителей.
 - Только модели с отметкой `minors_ok`. **Без Grok** (расследования ЕС из-за дипфейков, в том числе детей: [Al Jazeera](https://www.aljazeera.com/news/2026/1/26/eu-launches-probe-into-grok-ai-feature-creating-deepfakes-of-women-minors)).
-- Видео — 480p, ≤ 10 с. Поэтому motion control у младших идёт через `wan/2-2-animate-move` 480p, а не `kling-2.6/motion-control` (в реестре он только 720p).
+- Видео — 480p, ≤ 10 с. Motion control у младших — `wan/2-2-animate-move` (по документации kie только 720p, ~62 кредита за 5 с) или только демо ведущего.
 - Модерация промпта до генерации: стоп-слова → поиск ПДн → LLM-классификатор. Если классификатор ошибся, генерация отклоняется (fail-closed). Картинки проверяет vision-LLM до показа. `nsfw_checker: true` везде, где есть.
 - **Google-модели** (`nano-banana-2-1`, `veo3_lite`, `google/gemini-3-8-flash-tts`) — решение Сени. Условия Gemini API запрещают сервисы для лиц младше 18 [[Gemini API Terms](https://ai.google.dev/gemini-api/terms)]. Если решено «без Google для 14–17», замены такие:
   - картинка и правка → `flux-3/klein-*` (2 зв.; kie по умолчанию переписывает промпт, `enhance_prompt` лучше выключить, чтобы черты не менялись [[kie-models.md, §2.2](../research/kie-models.md)]);
@@ -738,7 +737,7 @@ Motion control бесплатно: у Kling (kling.ai) есть бесплатн
 
 ### Чеклист: накануне
 
-- [ ] Сверить 10 ключевых цен с kie.ai/pricing (`nano-banana-2-1`, `seedance-2-mini`, `kling-2.6/motion-control`, `wan/2-2-animate-move`, `infinitalk`, Suno, `gemini-3-8-flash-tts`, `flux-3/klein`), при необходимости обновить прайс в звёздах [[kie-models.md, §3.10](../research/kie-models.md)].
+- [ ] Сверить 10 ключевых цен с kie.ai/pricing (`nano-banana-2-1`, `seedance-2-mini`, `kling-2.6/motion-control`, `wan/2-2-animate-move`, `kling/ai-avatar-standard`, Suno, `gemini-3-8-flash-tts`, `flux-3/klein`), при необходимости обновить прайс в звёздах [[kie-models.md, §3.10](../research/kie-models.md)].
 - [ ] Генеральный прогон: каждое действие урока по одному разу (~80 кр). Отдельно проверить русский в `gemini-3-8-flash-tts` (~1 кр) и статус ElevenLabs на kie.
 - [ ] Баланс kie ≥ бюджета урока (ученики ~2200 кр + ведущий ~700 кр + запас). Пополнять частями [[kie-models.md, §4.6](../research/kie-models.md)].
 - [ ] У всех участников 1000 звёзд, дневной лимит 300.
@@ -757,7 +756,7 @@ Motion control бесплатно: у Kling (kling.ai) есть бесплатн
 ## 11. Решения, которые нужны от Сени
 
 1. **Google-модели для 14–17** (`nano-banana-2-1`, `gemini-3-8-flash-tts`, `veo3_lite`): разрешить с согласием родителей или заменять. Для голоса чистой не-Google замены нет.
-2. **Motion control для младших:** `wan/2-2-animate-move` 480p (цены в прайс-листе нет, предположено 40 зв.) или только демо ведущего. Разрешаем ли 18+ свой драйвер.
+2. **Motion control для младших:** `wan/2-2-animate-move` (только 720p, ~62 кредита за 5 с = 80 зв.) или только демо ведущего. Разрешаем ли 18+ свой драйвер.
 3. **Монтаж:** CapCut (13+ с согласием) или делать «склейку» на платформе.
 4. **Галерея мини-группы и Карточка персонажа** — успеют ли к уроку 2. Без галереи файлы передаются через чат Zoom.
 5. **Что было на уроке 1:** есть ли у участников портрет персонажа. Урок 2 рассчитан на оба варианта.
