@@ -28,7 +28,7 @@
 | `text` | `claude-haiku-5-5`, `gpt-6-luna`, `claude-sonnet-5-5` | `prompt` | `system`, `maxTokens` (≤2000) |
 | `image` | `nano-banana-2-1`, `flux-3/klein-text-to-image`, `nano-banana-pro` | `prompt` | `aspectRatio` |
 | `image_edit` | `nano-banana-2-1`, `flux-3/klein-edit-image`, `nano-banana-pro` | `prompt`, `images[]` | `aspectRatio` |
-| `video` | `bytedance/seedance-2-mini`, `wan/3-0-video`, `wan/3-0-video-prime`, `kling-4.0/reference-to-video` | `prompt` | `images[]` (первый кадр / `@image_1`), `duration`, `aspectRatio`, `audio`; для Wan 3.0: `resolution` (480P/720P), `reference: true` + `videos[]`, `audios[]` (Image1/Video1/Audio1 в промпте); для Kling 4.0: `videos[]`, `elements[]`, `voices[]` |
+| `video` | `bytedance/seedance-2-mini`, `bytedance/seedance-2-5`, `wan/3-0-video`, `wan/3-0-video-prime`, `kling-4.0/reference-to-video` | `prompt` | `images[]` (первый и последний кадр), `duration`, `aspectRatio`, `audio`, `resolution`; `reference: true` — картинки идут референсами, а не первым кадром, плюс `videos[]`, `audios[]` (Seedance и Wan 3.0; у Wan в промпте Image1/Video1/Audio1); для Seedance 2.5: `lastFrame: true` (вернуть последний кадр); для Kling 4.0: `videos[]`, `elements[]`, `voices[]` |
 | `motion` | `kling-2.6/motion-control`, `wan/2-2-animate-move` | `images[0]` (персонаж), `video` (видео-драйвер с движением) | `prompt` |
 | `lipsync` | `kling/ai-avatar-standard`, `infinitalk/from-audio` | `images[0]`, `audio` | `prompt` |
 | `voice` | `google/gemini-3-8-flash-tts` | `text` | `style` (манера речи), `voice` (по умолчанию `Kore`) |
@@ -39,7 +39,9 @@
 Что шлюз делает сам:
 
 - Для видео Seedance, Wan и картинок Flux включает фильтр контента (`nsfw_checker: true`). У kie он по умолчанию **выключен**.
-- Wan 3.0 по умолчанию генерирует в 1080P — шлюз ставит 480P, если не попросили 720P.
+- Wan 3.0 по умолчанию генерирует в 1080P, Seedance — в 720p. Шлюз ставит 480p, если не попросили 720p; 1080p не пропускает.
+- Длительность режется: Seedance Mini до 8 с, Seedance 2.5 и Wan 3.0 до 10 с, Kling 4.0 до 10 с.
+- Пустые списки референсов не отправляются. Первый кадр и референсы вместе не уходят: у Seedance и Wan это разные режимы.
 - Для Claude передаёт обязательные по документации поля `thinkingFlag`, `stream`, `max_tokens`. Поля `system` в схеме kie нет, поэтому инструкция кладётся в начало сообщения.
 - Для GPT передаёт `instructions` (иначе kie подставляет свой длинный промпт).
 - Музыка без вокала идёт в `custom_mode`: в простом режиме Suno игнорирует `instrumental` и всё равно поёт.
@@ -61,6 +63,9 @@
 | Говорящая голова, озвучка ~4 с | `kling/ai-avatar-standard` | ✅ mp4 | 48 | 4,3 мин |
 | Говорящая голова | `infinitalk/from-audio` | ❌ ошибка kie (500) даже на примере из их документации, кредиты не списаны | 0 | — |
 | Видео 5 с, 720p, персонаж `@image_1`, звук модели | `kling-4.0/reference-to-video` | ✅ mp4 | 142.5 | 90 с |
+| Видео 5 с, 480P, со звуком, из картинки (первый кадр) | `wan/3-0-video` | ✅ mp4 | 40 | 77 с |
+| Видео 5 с, 480p, персонаж по референсу в новой сцене (кухня) | `bytedance/seedance-2-mini` (`reference: true`) | ✅ mp4 | 19 | 81 с |
+| Тот же промпт и референс | `bytedance/seedance-2-5` (`reference: true`, `lastFrame: true`) | ✅ mp4 + последний кадр jpg | 140 | 2,7 мин |
 | Видео с голосом-референсом | `kling-4.0/reference-to-video` | ❌ «No speech detected in the voice audio» на 4-секундной озвучке; кредиты не списаны. Голос-референс нужен длиннее и чище | 0 | 17 с |
 
 Особенности ответов:
@@ -69,12 +74,31 @@
 - Ответ Claude приходит без заголовка `Content-Type: application/json`, поэтому в n8n стоит принудительный разбор JSON.
 - При ошибке модели `state: "fail"`, `failMsg` с причиной, `creditsConsumed: 0`.
 
+## Видео с персонажем: одна семья моделей — Seedance
+
+Решение от 1 ноября 2026: всё видео с персонажем делаем на Seedance. У Mini и 2.5 одинаковые поля, один стиль промптов и один режим референсов, поэтому ученики учат один способ работы.
+
+| Кому | Модель | 5 с, 480p | Зачем |
+|---|---|---|---|
+| Ученики (по умолчанию) | `bytedance/seedance-2-mini` | 19 кр (25★), 1–1,5 мин | Оживить кадр или снять новую сцену по листу персонажа |
+| Ведущий: демо, финал микродрамы | `bytedance/seedance-2-5` | 140 кр, ~2,7 мин | Лучшее качество; `lastFrame: true` отдаёт последний кадр, с него начинается следующая сцена |
+
+Как держать персонажа:
+
+1. Лист персонажа (4 ракурса и 3 эмоции) делаем один раз в `image_edit`.
+2. Видео запускаем с `reference: true` и листом в `images[]`. В промпте пишем «персонаж с референса… сохрани его внешность».
+3. Если кадр уже готов и нужен точно он, — без `reference`: картинка идёт первым кадром.
+4. Для сцен подряд (микродрама): Seedance 2.5 с `lastFrame: true`, следующая сцена берёт этот кадр первым кадром.
+
+Перенос движения (`motion`) и говорящая голова (`lipsync`) остаются на Kling: они проверены, а Seedance для этих задач не тестировали. Wan 3.0 и Kling 4.0 остаются в белом списке как запасные.
+
 ## Требования к файлам (из документации kie)
 
 - Kling motion control: на фото персонажа видны голова, плечи и торс; видео-драйвер 3–30 с, тоже с головой, плечами и торсом.
 - Kling 4.0: картинки 300–65536 px, соотношение сторон 0.4–2.5; видео 2–30 с; персонаж в `elements` — 2–4 ракурса; голос — внятная речь.
 - Kling AI Avatar: картинка jpeg/png до 10 МБ, аудио до 100 МБ.
-- Seedance 2.0 Mini: длительность 4–15 с, 480p или 720p; может отказываться от реалистичных лиц.
+- Seedance 2.0 Mini: длительность 4–15 с, 480p или 720p; референсы — до 9 картинок, 3 видео и 3 аудио по 2–15 с. Может отказываться от реалистичных лиц.
+- Seedance 2.5: длительность 4–30 с, 480p / 720p / 1080p; референсы — до 30 картинок, 10 видео и 10 аудио. Картинки jpeg/png/webp, стороны от 300 px, соотношение 0.4–2.5. Цена за секунду: 480p — 28 кр, 720p — 63 кр (с видео-референсом дешевле за секунду, но оплачивается и длина референса).
 
 ## Возраст и модели
 
