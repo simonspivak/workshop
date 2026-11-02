@@ -92,18 +92,18 @@ export type AspectRatio = (typeof ASPECT_RATIOS)[number];
 
 /** Голоса Gemini TTS. Проверен на курсе только Puck (см. docs/decisions.md, п. 6). */
 export const VOICE_OPTIONS = [
-  { id: "Kore", label: "Kore — уверенный" },
-  { id: "Puck", label: "Puck — бодрый" },
-  { id: "Charon", label: "Charon — спокойный, как диктор" },
-  { id: "Fenrir", label: "Fenrir — взволнованный" },
-  { id: "Leda", label: "Leda — молодой" },
-  { id: "Orus", label: "Orus — твёрдый" },
-  { id: "Aoede", label: "Aoede — лёгкий" },
-  { id: "Zephyr", label: "Zephyr — яркий" },
-  { id: "Algenib", label: "Algenib — с хрипотцой" },
-  { id: "Gacrux", label: "Gacrux — взрослый" },
-  { id: "Sulafat", label: "Sulafat — тёплый" },
-  { id: "Achird", label: "Achird — дружелюбный" },
+  { id: "Kore", label: "Kore — женский, уверенный" },
+  { id: "Puck", label: "Puck — мужской, бодрый" },
+  { id: "Charon", label: "Charon — мужской, спокойный, как диктор" },
+  { id: "Fenrir", label: "Fenrir — мужской, взволнованный" },
+  { id: "Leda", label: "Leda — женский, молодой" },
+  { id: "Orus", label: "Orus — мужской, твёрдый" },
+  { id: "Aoede", label: "Aoede — женский, лёгкий" },
+  { id: "Zephyr", label: "Zephyr — женский, яркий" },
+  { id: "Algenib", label: "Algenib — мужской, с хрипотцой" },
+  { id: "Gacrux", label: "Gacrux — женский, взрослый" },
+  { id: "Sulafat", label: "Sulafat — женский, тёплый" },
+  { id: "Achird", label: "Achird — мужской, дружелюбный" },
 ] as const;
 export type VoiceId = (typeof VOICE_OPTIONS)[number]["id"];
 export const VOICE_IDS = VOICE_OPTIONS.map((v) => v.id) as [VoiceId, ...VoiceId[]];
