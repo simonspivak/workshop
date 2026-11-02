@@ -7,7 +7,7 @@ import { CreateStudents } from "./CreateStudents";
 import { GroupSettingsForm, PauseControl } from "./GroupSettings";
 import { StudentList } from "./StudentList";
 import { requireStaff } from "@/lib/server/dal/auth";
-import { getGroup, listStudents } from "@/lib/server/dal/teacher";
+import { getGroup, getGroupStarStats, listStudents } from "@/lib/server/dal/teacher";
 import { groupKindLabels } from "@/lib/platform/messages";
 import { Badge, Card, Container, PageTitle, Skeleton } from "@/components/platform/ui";
 
@@ -39,14 +39,16 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const group = await getGroup(user, id);
   if (!group) notFound();
-  const students = await listStudents(user, group.id);
+  const [students, stars] = await Promise.all([listStudents(user, group.id), getGroupStarStats(user, group.id)]);
 
   const settings = {
     id: group.id,
     title: group.title,
     kind: group.kind,
     endsOn: group.endsOn,
-    dailyCap: group.dailyCap,
+    budgetStars: group.budgetStars,
+    plannedStudents: group.plannedStudents,
+    starsPerStudent: group.starsPerStudent,
     allowGoogleMinors: group.allowGoogleMinors,
     shareGallery: group.shareGallery,
     paused: group.paused,
@@ -90,12 +92,30 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
         <Card title="Настройки группы">
           <GroupSettingsForm group={settings} />
         </Card>
-        <Card title="Пауза" className="self-start">
-          <PauseControl group={settings} />
-        </Card>
+        <div className="space-y-6 self-start">
+          <Card title="Звёзды группы">
+            <dl className="space-y-2 font-mono text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-ink-soft">Бюджет</dt>
+                <dd>{group.budgetStars != null ? `${group.budgetStars.toLocaleString("ru-RU")} ★` : "не задан"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-ink-soft">Роздано</dt>
+                <dd>{stars.given.toLocaleString("ru-RU")} ★</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-ink-soft">Потрачено</dt>
+                <dd>{stars.spent.toLocaleString("ru-RU")} ★</dd>
+              </div>
+            </dl>
+          </Card>
+          <Card title="Пауза">
+            <PauseControl group={settings} />
+          </Card>
+        </div>
       </div>
 
-      <CreateStudents groupId={group.id} groupCode={group.code} />
+      <CreateStudents groupId={group.id} groupCode={group.code} starsPerStudent={group.starsPerStudent} />
 
       <Card title={`Ученики · ${students.length}`} className="print:hidden">
         <StudentList

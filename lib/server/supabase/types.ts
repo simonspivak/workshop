@@ -36,6 +36,9 @@ type GroupRow = Timestamps & {
   teacher_id: string;
   paused: boolean;
   daily_cap: number;
+  budget_stars: number | null;
+  planned_students: number | null;
+  stars_per_student: number | null;
   ends_on: string | null;
   allow_google_minors: boolean;
   share_gallery: boolean;

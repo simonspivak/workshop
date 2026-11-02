@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { setGroupPaused, updateGroup } from "../../actions";
 import { FieldError, FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
+import { BudgetFields } from "@/components/platform/BudgetFields";
 import { Notice, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { groupKindLabels, type ActionResult, type GroupKind } from "@/lib/platform/messages";
 
@@ -12,7 +13,9 @@ export type GroupSettingsValue = {
   title: string;
   kind: GroupKind;
   endsOn: string | null;
-  dailyCap: number;
+  budgetStars: number | null;
+  plannedStudents: number | null;
+  starsPerStudent: number | null;
   allowGoogleMinors: boolean;
   shareGallery: boolean;
   paused: boolean;
@@ -69,22 +72,7 @@ export function GroupSettingsForm({ group }: { group: GroupSettingsValue }) {
         <p className={hintClass}>Боты учеников работают ещё 14 дней после этой даты.</p>
         <FieldError state={state} name="endsOn" />
       </div>
-      <div>
-        <label htmlFor="dailyCap" className={labelClass}>
-          Дневной лимит звёзд на группу
-        </label>
-        <input
-          id="dailyCap"
-          name="dailyCap"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={1000000}
-          defaultValue={group.dailyCap}
-          className={`${inputClass} mt-2 font-mono`}
-        />
-        <FieldError state={state} name="dailyCap" />
-      </div>
+      <BudgetFields state={state} initial={{ budget: group.budgetStars, planned: group.plannedStudents, perStudent: group.starsPerStudent }} />
       <fieldset className="space-y-3 sm:col-span-2">
         <legend className="sr-only">Доступ</legend>
         <label className="flex items-start gap-3">

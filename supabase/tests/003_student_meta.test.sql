@@ -8,8 +8,8 @@ insert into auth.users (id, email) values
   ('a0000000-0000-4000-8000-000000000002', 'teacher1@example.test');
 update public.profiles set role = 'teacher', age_band = 'adult'
  where id = 'a0000000-0000-4000-8000-000000000002';
-insert into public.groups (id, code, title, teacher_id) values
-  ('b0000000-0000-4000-8000-000000000001', 'md1', 'Группа 1', 'a0000000-0000-4000-8000-000000000002');
+insert into public.groups (id, code, title, teacher_id, stars_per_student) values
+  ('b0000000-0000-4000-8000-000000000001', 'md1', 'Группа 1', 'a0000000-0000-4000-8000-000000000002', 1000);
 
 -- шаг 1: как в Auth — пользователь без наших метаданных
 insert into auth.users (id, email, raw_app_meta_data) values
