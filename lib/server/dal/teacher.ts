@@ -17,7 +17,9 @@ export type GroupSummary = {
   kind: GroupKind;
   paused: boolean;
   endsOn: string | null;
-  dailyCap: number;
+  budgetStars: number | null;
+  plannedStudents: number | null;
+  starsPerStudent: number | null;
   allowGoogleMinors: boolean;
   shareGallery: boolean;
   studentCount: number;
@@ -36,7 +38,7 @@ export type StudentRow = {
 };
 
 const GROUP_COLUMNS =
-  "id, code, title, kind, paused, ends_on, daily_cap, allow_google_minors, share_gallery, teacher_id, created_at";
+  "id, code, title, kind, paused, ends_on, budget_stars, planned_students, stars_per_student, allow_google_minors, share_gallery, teacher_id, created_at";
 
 type GroupDbRow = {
   id: string;
@@ -45,7 +47,9 @@ type GroupDbRow = {
   kind: GroupKind;
   paused: boolean;
   ends_on: string | null;
-  daily_cap: number;
+  budget_stars: number | null;
+  planned_students: number | null;
+  stars_per_student: number | null;
   allow_google_minors: boolean;
   share_gallery: boolean;
   teacher_id: string;
@@ -59,7 +63,9 @@ function toSummary(row: GroupDbRow, studentCount: number): GroupSummary {
     kind: row.kind,
     paused: row.paused,
     endsOn: row.ends_on,
-    dailyCap: row.daily_cap,
+    budgetStars: row.budget_stars,
+    plannedStudents: row.planned_students,
+    starsPerStudent: row.stars_per_student,
     allowGoogleMinors: row.allow_google_minors,
     shareGallery: row.share_gallery,
     studentCount,
@@ -150,6 +156,38 @@ export async function listStudents(user: SessionUser, groupId: string): Promise<
     balance: balances.get(s.id) ?? 0,
     createdAt: s.created_at,
   }));
+}
+
+export type GroupStarStats = { given: number; spent: number };
+
+/** Сколько звёзд роздано ученикам группы и сколько они потратили. Вызывать после getGroup. */
+export async function getGroupStarStats(user: SessionUser, groupId: string): Promise<GroupStarStats> {
+  assertStaff(user);
+  const admin = createAdminClient();
+  const { data: students, error } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("role", "student");
+  if (error) throw new Error(`teacher.getGroupStarStats failed (${error.code})`);
+  if (!students?.length) return { given: 0, spent: 0 };
+
+  const { data: rows, error: ledgerError } = await admin
+    .from("star_ledger")
+    .select("delta, reason")
+    .in(
+      "user_id",
+      students.map((s) => s.id),
+    );
+  if (ledgerError) throw new Error(`teacher.getGroupStarStats ledger failed (${ledgerError.code})`);
+
+  let given = 0;
+  let spent = 0;
+  for (const row of rows ?? []) {
+    if (row.reason === "debit" || row.reason === "bot_reply" || row.reason === "refund") spent -= row.delta;
+    else given += row.delta;
+  }
+  return { given, spent: Math.max(0, spent) };
 }
 
 // ---------- проверки для Server Actions ----------

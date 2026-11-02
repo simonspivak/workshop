@@ -33,11 +33,11 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         <ArrowLeft aria-hidden="true" className="size-4" /> Группа {group.code}
       </Link>
       <PageTitle eyebrow={`Группа ${group.code} · ${group.title}`} title="Прогресс, тесты и звёзды">
-        Отметки учеников по урокам, засчитанные тесты и траты. День считается по Берлину, как дневной лимит группы.
+        Отметки учеников по урокам, засчитанные тесты и траты. День считается по Берлину.
       </PageTitle>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Потрачено сегодня" value={<Stars value={report.totals.spentToday} />} hint={`Лимит группы: ${group.dailyCap.toLocaleString("ru-RU")} ★`} />
+        <Stat label="Потрачено сегодня" value={<Stars value={report.totals.spentToday} />} hint={group.budgetStars != null ? `Бюджет группы: ${group.budgetStars.toLocaleString("ru-RU")} ★` : "Бюджет группы не задан"} />
         <Stat label="Потрачено за всё время" value={<Stars value={report.totals.spentTotal} />} hint="С учётом возвратов" />
         <Stat label="Бонусы за тесты" value={<Stars value={report.totals.quizBonus} />} hint="+20 ★ за 8 из 10" />
       </div>

@@ -12,9 +12,9 @@ insert into auth.users (id, email) values
 update public.profiles set role = 'admin', age_band = 'adult' where id = 'a0000000-0000-4000-8000-000000000001';
 update public.profiles set role = 'teacher', age_band = 'adult'
  where id in ('a0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000003');
-insert into public.groups (id, code, title, teacher_id) values
-  ('b0000000-0000-4000-8000-000000000001', 'g1', 'Группа 1', 'a0000000-0000-4000-8000-000000000002'),
-  ('b0000000-0000-4000-8000-000000000002', 'g2', 'Группа 2', 'a0000000-0000-4000-8000-000000000003');
+insert into public.groups (id, code, title, teacher_id, stars_per_student) values
+  ('b0000000-0000-4000-8000-000000000001', 'g1', 'Группа 1', 'a0000000-0000-4000-8000-000000000002', 1000),
+  ('b0000000-0000-4000-8000-000000000002', 'g2', 'Группа 2', 'a0000000-0000-4000-8000-000000000003', 1000);
 insert into auth.users (id, email, raw_app_meta_data) values
   ('c0000000-0000-4000-8000-00000000000a', 'g1-anna@students.example.test',
    '{"login": "g1-anna", "nickname": "Анна", "group_id": "b0000000-0000-4000-8000-000000000001", "age_band": "16_17"}'),

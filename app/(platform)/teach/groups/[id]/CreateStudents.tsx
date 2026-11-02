@@ -19,7 +19,15 @@ function useLoginUrl(): string {
   );
 }
 
-export function CreateStudents({ groupId, groupCode }: { groupId: string; groupCode: string }) {
+export function CreateStudents({
+  groupId,
+  groupCode,
+  starsPerStudent,
+}: {
+  groupId: string;
+  groupCode: string;
+  starsPerStudent: number | null;
+}) {
   const [state, action] = useActionState<CreateStudentsResult | null, FormData>(createStudents, null);
   const loginUrl = useLoginUrl();
   const created = state?.ok ? state.created : [];
@@ -47,7 +55,7 @@ export function CreateStudents({ groupId, groupCode }: { groupId: string; groupC
               className={`${inputClass} mt-2 font-mono`}
             />
             <p className={hintClass}>
-              Например, «Лиза» → <span className="font-mono">{groupCode}-liza</span>. До 40 за раз. Каждому — 1000 ★.
+              Например, «Лиза» → <span className="font-mono">{groupCode}-liza</span>. До 40 за раз. Каждому — {starsPerStudent != null ? `${starsPerStudent.toLocaleString("ru-RU")} ★` : "0 ★ (задайте бюджет группы в настройках)"}.
             </p>
             <FieldError state={state} name="nicknames" />
           </div>

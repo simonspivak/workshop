@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { createGroup } from "./actions";
 import { FieldError, FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
+import { BudgetFields } from "@/components/platform/BudgetFields";
 import { hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { groupKindLabels, type ActionResult } from "@/lib/platform/messages";
 
@@ -59,22 +60,7 @@ export function CreateGroupForm() {
         <p className={hintClass}>Боты учеников работают ещё 14 дней после этой даты.</p>
         <FieldError state={state} name="endsOn" />
       </div>
-      <div>
-        <label htmlFor="dailyCap" className={labelClass}>
-          Дневной лимит звёзд на группу
-        </label>
-        <input
-          id="dailyCap"
-          name="dailyCap"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={1000000}
-          defaultValue={5000}
-          className={`${inputClass} mt-2 font-mono`}
-        />
-        <FieldError state={state} name="dailyCap" />
-      </div>
+      <BudgetFields state={state} />
       <fieldset className="space-y-3 self-end">
         <legend className="sr-only">Доступ</legend>
         <label className="flex items-start gap-3">
