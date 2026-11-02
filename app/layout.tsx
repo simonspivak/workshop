@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Onest, Unbounded } from "next/font/google";
 import { config } from "@/content/config";
 import { site } from "@/content/site";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
 import "./globals.css";
 
 const unbounded = Unbounded({
@@ -55,11 +53,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           {site.skipLink}
         </a>
-        <Header />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-        <Footer />
+        {/* Шапка, <main id="main"> и подвал — в app/(site)/layout.tsx и app/(platform)/layout.tsx */}
+        {children}
       </body>
     </html>
   );
