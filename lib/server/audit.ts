@@ -20,7 +20,12 @@ export type AuditAction =
   | "job.unhide"
   | "moderation.blocked"
   | "bot.telegram_connect"
-  | "bot.telegram_disconnect";
+  | "bot.telegram_disconnect"
+  // этап B2: конструктор бота, экспорт заявок, снятие вебхука после срока жизни
+  | "bot.create"
+  | "bot.update"
+  | "bot.leads_export"
+  | "bot.telegram_retired";
 
 export async function audit(entry: {
   actorId: string | null;
