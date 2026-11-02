@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
+import { RichText } from "@/components/platform/RichText";
 import { Sparkles } from "lucide-react";
 import { newIdempotencyKey, postGenerate } from "@/components/platform/GenerateClient";
 import { GenerateReferencePicker } from "@/components/platform/GenerateReferencePicker";
@@ -77,6 +78,20 @@ export function GeneratePanel({
   const [lyrics, setLyrics] = useState("");
   const [title, setTitle] = useState("");
   const [pending, setPending] = useState(false);
+  // Переписка текстового задания: хранится в браузере, уходит в запрос как история
+  const threadKey = action === "text" ? `iis-thread:${lessonId ?? "-"}:${taskId ?? "-"}:${option.key}` : null;
+  // Панель монтируется только в браузере (после выбора действия), поэтому читаем хранилище сразу
+  const [thread, setThread] = useState<ThreadTurn[]>(() => readThread(threadKey));
+  function saveThread(next: ThreadTurn[]) {
+    setThread(next);
+    if (!threadKey) return;
+    try {
+      if (next.length) window.localStorage.setItem(threadKey, JSON.stringify(next.slice(-40)));
+      else window.localStorage.removeItem(threadKey);
+    } catch {
+      /* игнорируем */
+    }
+  }
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   // один ключ на одно намерение: повтор после сбоя сети не спишет второй раз
@@ -108,7 +123,7 @@ export function GeneratePanel({
     const text = prompt.trim();
     switch (action) {
       case "text":
-        Object.assign(body, { prompt: text, long: option.long });
+        Object.assign(body, { prompt: text, long: option.long, history: thread.length ? thread : undefined });
         break;
       case "image":
         Object.assign(body, { prompt: text, aspectRatio: aspect });
@@ -154,6 +169,14 @@ export function GeneratePanel({
       return;
     }
     keyRef.current = null;
+    if (action === "text" && result.job?.text) {
+      saveThread([...thread, { role: "user", text }, { role: "assistant", text: result.job.text }]);
+      onPromptChange("");
+      if (result.balance !== null && !staff) {
+        setInfo(stars > 0 ? `Списано ${stars} ★, осталось ${result.balance.toLocaleString("ru-RU")} ★.` : null);
+      }
+      return;
+    }
     if (result.balance !== null && !staff) {
       setInfo(stars > 0 ? `Списано ${stars} ★, осталось ${result.balance.toLocaleString("ru-RU")} ★.` : null);
     }
@@ -179,6 +202,35 @@ export function GeneratePanel({
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-3xl bg-lavender/60 p-4 sm:p-5" aria-busy={pending}>
+      {action === "text" && thread.length > 0 && (
+        <div className="space-y-3">
+          <ol className="space-y-3" aria-label="Переписка с ИИ">
+            {thread.map((turn, i) => (
+              <li
+                key={i}
+                className={
+                  turn.role === "user"
+                    ? "ml-6 rounded-2xl bg-violet px-4 py-3 text-white sm:ml-16"
+                    : "mr-6 rounded-2xl bg-white px-4 py-3 ring-1 ring-ink/10 sm:mr-16"
+                }
+              >
+                <span className="sr-only">{turn.role === "user" ? "Вы:" : "ИИ:"}</span>
+                {turn.role === "user" ? (
+                  <p className="line-clamp-6 break-words whitespace-pre-wrap">{turn.text}</p>
+                ) : (
+                  <RichText text={turn.text} className="leading-relaxed" />
+                )}
+              </li>
+            ))}
+          </ol>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-soft">
+            <span>Напишите ответ ниже — ИИ помнит весь разговор. Каждое сообщение — {stars} ★.</span>
+            <button type="button" onClick={() => saveThread([])} className="font-semibold text-violet underline-offset-4 hover:underline">
+              Новый диалог
+            </button>
+          </div>
+        </div>
+      )}
       {staff && option.models.length > 1 && (
         <div>
           <label htmlFor={`${id}-model`} className={labelClass}>
@@ -425,4 +477,16 @@ function ModeChoice({
       </span>
     </label>
   );
+}
+
+type ThreadTurn = { role: "user" | "assistant"; text: string };
+
+function readThread(key: string | null): ThreadTurn[] {
+  if (!key || typeof window === "undefined") return [];
+  try {
+    const saved = window.localStorage.getItem(key);
+    return saved ? (JSON.parse(saved) as ThreadTurn[]) : [];
+  } catch {
+    return [];
+  }
 }
