@@ -1,0 +1,40 @@
+Files in this folder are unmodified copies from npm packages (checked by sha256 in
+lib/platform/montage/core-files.ts, `npm run test:montage`). They are used by the
+auto-montage studio (/app/studio) to edit video in the browser.
+
+ffmpeg-core.js, ffmpeg-core.wasm
+  @ffmpeg/core 0.12.10 — FFmpeg 5.1.4 compiled to WebAssembly (single thread) with
+  x264, x265, libvpx, LAME, Theora, Vorbis, Opus, libwebp, FreeType, FriBidi, libass, zimg.
+  License: GPL-2.0-or-later.
+  Corresponding source and build scripts:
+    https://github.com/ffmpegwasm/ffmpeg.wasm (packages/core, version 0.12.10)
+    https://www.npmjs.com/package/@ffmpeg/core/v/0.12.10
+    https://ffmpeg.org/releases/ (FFmpeg 5.1.4)
+
+classes.js, worker.js, const.js, errors.js, utils.js
+  @ffmpeg/ffmpeg 0.12.15 — https://github.com/ffmpegwasm/ffmpeg.wasm (packages/ffmpeg)
+  License: MIT
+
+  MIT License
+
+  Copyright (c) 2019 Jerome Wu
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+The subtitle font is in ../fonts (Onest Bold, SIL Open Font License 1.1, see ../fonts/OFL.txt).
