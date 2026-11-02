@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Вендорные файлы ffmpeg.wasm (копии из node_modules, сверяются по sha256 в test:montage)
+    "public/ffmpeg/**",
   ]),
 ]);
 
