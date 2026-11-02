@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
-import { ArrowLeft } from "lucide-react";
+import { Suspense, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, ChartColumn, Images } from "lucide-react";
 import { CreateStudents } from "./CreateStudents";
 import { GroupSettingsForm, PauseControl } from "./GroupSettings";
 import { StudentList } from "./StudentList";
@@ -65,6 +65,21 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
         </PageTitle>
       </div>
 
+      <nav aria-label="Разделы группы" className="grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden">
+        <GroupSectionLink
+          href={`/teach/groups/${group.id}/report`}
+          icon={<ChartColumn aria-hidden="true" className="size-6 text-violet" />}
+          title="Прогресс, тесты и звёзды"
+          text="Отметки по урокам, баллы тестов, траты учеников за сегодня и за всё время."
+        />
+        <GroupSectionLink
+          href={`/teach/groups/${group.id}/gallery`}
+          icon={<Images aria-hidden="true" className="size-6 text-violet" />}
+          title="Галерея группы"
+          text="Все результаты учеников. Неподходящее можно скрыть."
+        />
+      </nav>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] print:hidden">
         <Card title="Настройки группы">
           <GroupSettingsForm group={settings} />
@@ -90,6 +105,19 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
         />
       </Card>
     </div>
+  );
+}
+
+function GroupSectionLink({ href, icon, title, text }: { href: string; icon: ReactNode; title: string; text: string }) {
+  return (
+    <Link href={href} className="group flex items-start gap-4 rounded-3xl bg-lavender p-5 transition-colors hover:bg-glow">
+      {icon}
+      <span className="min-w-0 flex-1">
+        <span className="block font-display font-semibold">{title}</span>
+        <span className="mt-1 block text-ink-soft">{text}</span>
+      </span>
+      <ArrowRight aria-hidden="true" className="mt-1 size-5 shrink-0 text-violet transition-transform group-hover:translate-x-0.5" />
+    </Link>
   );
 }
 
