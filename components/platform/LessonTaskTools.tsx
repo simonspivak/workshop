@@ -102,7 +102,7 @@ export function LessonTaskTools({
             ))}
             {montage && (
               <li>
-                <Link href="/app/studio" className={`${buttonClass("sun", "sm")} h-full`}>
+                <Link href={`/app/studio?lesson=${encodeURIComponent(lessonId)}&task=${encodeURIComponent(taskId)}`} className={`${buttonClass("sun", "sm")} h-full`}>
                   <Clapperboard aria-hidden="true" className="size-4" /> Монтаж · 0 ★ <ArrowRight aria-hidden="true" className="size-4" />
                 </Link>
               </li>

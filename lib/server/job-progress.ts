@@ -115,6 +115,9 @@ async function refundAndReload(job: JobRecord, reason: string): Promise<JobRecor
  * за зависшую задачу. Возвращает актуальное состояние.
  */
 export async function advanceJob(job: JobRecord): Promise<JobRecord> {
+  // Монтаж ведёт студия (загрузка из браузера), шлюз тут ни при чём
+  if (job.action === "montage") return job;
+
   const now = Date.now();
   const timing = timingOf(job);
 

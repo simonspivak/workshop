@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ChartColumn, Images } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChartColumn, Images, Bot } from "lucide-react";
 import { CreateStudents } from "./CreateStudents";
 import { GroupSettingsForm, PauseControl } from "./GroupSettings";
 import { StudentList } from "./StudentList";
@@ -77,6 +77,12 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
           icon={<Images aria-hidden="true" className="size-6 text-violet" />}
           title="Галерея группы"
           text="Все результаты учеников. Неподходящее можно скрыть."
+        />
+        <GroupSectionLink
+          href={`/teach/groups/${group.id}/bots`}
+          icon={<Bot aria-hidden="true" className="size-6 text-violet" />}
+          title="Боты группы"
+          text="Боты учеников, их инструменты, Telegram и число заявок."
         />
       </nav>
 

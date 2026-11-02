@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/server/env";
 import { createClient } from "@/lib/server/supabase/server";
@@ -49,6 +50,8 @@ export const getUser = cache(async (): Promise<SessionUser | null> => {
   // Сначала — данные запроса: так ответ всегда считается при запросе и не «запекается»
   // при сборке (даже если переменных Supabase на сборке нет).
   await cookies();
+  // Клиент Supabase читает время (Date.now) при проверке токена — только при живом запросе
+  await connection();
   if (!isSupabaseConfigured()) return null;
 
   const supabase = await createClient();
