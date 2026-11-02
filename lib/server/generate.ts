@@ -54,7 +54,17 @@ const common = {
 const aspectRatio = z.enum(ASPECT_RATIOS).optional();
 
 export const generateRequestSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("text"), prompt: requiredText(MAX_PROMPT), long: z.boolean().optional(), ...common }),
+  z.object({
+    action: z.literal("text"),
+    prompt: requiredText(MAX_PROMPT),
+    long: z.boolean().optional(),
+    // Продолжение диалога: прошлые реплики этого задания (хранятся в браузере ученика)
+    history: z
+      .array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(20_000) }))
+      .max(40)
+      .optional(),
+    ...common,
+  }),
   z.object({ action: z.literal("image"), prompt: requiredText(MAX_PROMPT), aspectRatio, ...common }),
   z.object({
     action: z.literal("image_edit"),
@@ -138,6 +148,30 @@ const WALLET_STATUS: Record<WalletError, number> = {
   job_not_found: 404,
   server_error: 500,
 };
+
+const HISTORY_CHAR_LIMIT = 13_000; // + новое сообщение (до MAX_PROMPT) укладывается в лимит шлюза 20 000
+
+/** Склеивает прошлые реплики и новое сообщение в один запрос: шлюз принимает только prompt. */
+function withHistory(prompt: string, history: { role: "user" | "assistant"; text: string }[] | undefined): string {
+  if (!history?.length) return prompt;
+  const lines: string[] = [];
+  let used = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const turn = history[i];
+    const line = `${turn.role === "user" ? "[Ученик]" : "[ИИ]"}: ${turn.text}`;
+    if (used + line.length > HISTORY_CHAR_LIMIT) break;
+    lines.unshift(line);
+    used += line.length;
+  }
+  if (!lines.length) return prompt;
+  return (
+    "Это продолжение нашего диалога. Предыдущие сообщения:\n\n" +
+    lines.join("\n\n") +
+    "\n\nНовое сообщение ученика:\n" +
+    prompt +
+    "\n\nОтветь на новое сообщение с учётом всего диалога."
+  );
+}
 
 const TEXT_SYSTEM =
   "Ты — ИИ-помощник ученика на курсе «ИИ-старт». Отвечай на языке вопроса, по делу и без воды. " +
@@ -223,7 +257,7 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
   if (input.action === "text") {
     return runText(created.jobId, created.balance, {
       model: decision.model,
-      prompt: input.prompt,
+      prompt: withHistory(input.prompt, input.history),
       maxTokens: maxTokens ?? LONG_TEXT_TOKENS,
       staff: isStaff(user),
     });

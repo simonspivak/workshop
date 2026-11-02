@@ -1,5 +1,6 @@
 "use client";
 
+import { RichText } from "@/components/platform/RichText";
 import { useState, type ReactNode } from "react";
 import { Check, Copy, EyeOff, LoaderCircle, TriangleAlert } from "lucide-react";
 import { useLiveJob } from "@/components/platform/GenerateClient";
@@ -62,7 +63,7 @@ function TextResult({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="rounded-2xl bg-lavender p-4">
-      <p className="text-base leading-relaxed break-words whitespace-pre-wrap">{text}</p>
+      <RichText text={text} className="text-base leading-relaxed" />
       <button
         type="button"
         onClick={async () => {
