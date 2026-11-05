@@ -6,7 +6,7 @@ import { useLiveJob, useReferenceTray } from "@/components/platform/GenerateClie
 import { JobMedia, JobMeta, JobStatusLine } from "@/components/platform/GenerateJobCard";
 import { buttonClass } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
-import { jobActionLabels, type GalleryItem, type MediaFile } from "@/lib/platform/generation-types";
+import { jobActionLabels, type GalleryItem, type JobAction, type MediaFile } from "@/lib/platform/generation-types";
 
 export type HideResult = { ok: true } | { ok: false; error: string };
 export type HideAction = (prev: HideResult | null, formData: FormData) => Promise<HideResult>;
@@ -57,7 +57,9 @@ function GalleryCard({ item, mode, hideAction }: { item: GalleryItem; mode: "stu
         job={job}
         renderFileActions={(file) => (
           <div className="flex flex-wrap gap-2">
-            {mode === "student" && <ReferenceButton file={file} label={`${jobActionLabels[job.action]} · ${dateFormat.format(new Date(job.createdAt))}`} />}
+            {mode === "student" && (
+              <ReferenceButton file={file} action={job.action} label={`${jobActionLabels[job.action]} · ${dateFormat.format(new Date(job.createdAt))}`} />
+            )}
             <a href={file.url} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "sm")}>
               <ExternalLink aria-hidden="true" className="size-4" /> Открыть
             </a>
@@ -79,13 +81,13 @@ function GalleryCard({ item, mode, hideAction }: { item: GalleryItem; mode: "stu
   );
 }
 
-function ReferenceButton({ file, label }: { file: MediaFile; label: string }) {
+function ReferenceButton({ file, action, label }: { file: MediaFile; action: JobAction; label: string }) {
   const tray = useReferenceTray();
   const added = tray.has(file.path);
   return (
     <button
       type="button"
-      onClick={() => (added ? tray.remove(file.path) : tray.add({ path: file.path, kind: file.kind, label }))}
+      onClick={() => (added ? tray.remove(file.path) : tray.add({ path: file.path, kind: file.kind, label, action }))}
       aria-pressed={added}
       className={buttonClass(added ? "primary" : "secondary", "sm")}
       title={added ? "Убрать из референсов" : "Подставится первым в формах генерации в уроках"}

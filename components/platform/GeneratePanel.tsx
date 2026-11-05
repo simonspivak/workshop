@@ -40,6 +40,16 @@ const PROMPT_LIMITS: Record<GenerateActionOption["action"], number> = {
   music: 1000,
 };
 
+/** Реплика ученика — до 600 символов (сервер: STUDENT_VOICE_MAX_CHARS в lib/server/generate.ts), ведущему — 2000. */
+const STUDENT_VOICE_LIMIT = 600;
+
+function promptLimit(action: GenerateActionOption["action"], staff: boolean): number {
+  return action === "voice" && !staff ? STUDENT_VOICE_LIMIT : PROMPT_LIMITS[action];
+}
+
+/** «Говорящая голова» ученика: сервер принимает только озвучку реплики (lipsync_audio), не музыку. */
+const STUDENT_LIPSYNC_AUDIO_ACTIONS = ["voice"] as const;
+
 export function GeneratePanel({
   option,
   lessonId,
@@ -104,12 +114,15 @@ export function GeneratePanel({
   const maxImages = action === "image_edit" ? 4 : action === "video" ? (referenceMode ? 4 : 2) : 1;
   const needsImages = action === "image_edit" || action === "motion" || action === "lipsync";
   const driverOptions = staff ? [...library, ...references.filter((r) => r.kind === "video")] : library;
+  const limit = promptLimit(action, staff);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
     setInfo(null);
     if (promptRequired && !prompt.trim()) return setError("invalid_input");
+    // шаблон из задания вставляется программно, maxLength его не обрезает
+    if (action === "voice" && prompt.trim().length > limit) return setError("too_long");
     if (needsImages && images.length === 0) return setError("reference_required");
     if (action === "motion" && driver.length === 0) return setError("reference_required");
     if (action === "lipsync" && voiceTrack.length === 0) return setError("reference_required");
@@ -320,8 +333,9 @@ export function GeneratePanel({
       {action === "lipsync" && (
         <GenerateReferencePicker
           label="Озвучка"
-          hint="Своя реплика из галереи (озвучка)."
+          hint={staff ? "Своя реплика из галереи (озвучка)." : "Своя реплика из галереи. Только озвучка до 15 секунд."}
           kind="audio"
+          actions={staff ? undefined : STUDENT_LIPSYNC_AUDIO_ACTIONS}
           options={references}
           max={1}
           value={voiceTrack}
@@ -332,16 +346,24 @@ export function GeneratePanel({
       )}
 
       <div>
-        <label htmlFor={`${id}-prompt`} className={labelClass}>
-          {PROMPT_LABELS[action]}
-        </label>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <label htmlFor={`${id}-prompt`} className={labelClass}>
+            {PROMPT_LABELS[action]}
+          </label>
+          {action === "voice" && (
+            <span id={`${id}-prompt-count`} className={`font-mono text-xs ${prompt.length > limit ? "text-coral-deep" : "text-ink-soft"}`}>
+              {prompt.length} / {limit}
+            </span>
+          )}
+        </div>
         <textarea
           id={`${id}-prompt`}
           ref={promptRef}
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           required={promptRequired}
-          maxLength={PROMPT_LIMITS[action]}
+          maxLength={limit}
+          aria-describedby={action === "voice" ? `${id}-prompt-count` : undefined}
           rows={action === "text" ? 6 : 5}
           placeholder="Вставьте шаблон из задания и допишите своё"
           className={`${inputClass} mt-2 font-normal`}

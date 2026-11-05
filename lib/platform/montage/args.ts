@@ -7,7 +7,8 @@
 
   Конвейер (по одной сцене, чтобы не держать всё в памяти):
     1. Каждая сцена → seg-N.mp4 (только видео, h264) + seg-N.wav (PCM 44,1 кГц стерео):
-       кадр 480×854, 24 fps, реплика с 0,3 с, субтитр и метка «Сделано с ИИ» прожигаются здесь же.
+       кадр 480×854, 24 fps, реплика с 0,3 с (у «говорящей головы» — с 0 с: губы сделаны по этой
+       реплике с самого начала клипа), субтитр и метка «Сделано с ИИ» прожигаются здесь же.
        Если реплика длиннее клипа, последний кадр стоит (tpad clone).
        Длительность сцены кратна двум кадрам (1/12 с): тогда и кадры, и сэмплы целые,
        и склейка не уплывает по синхрону.
@@ -28,7 +29,7 @@ export const LIMITS = {
 } as const;
 
 export const TIMING = {
-  /** реплика начинается через 0,3 с после начала клипа */
+  /** реплика начинается через 0,3 с после начала клипа (кроме «говорящей головы»: там с 0 с) */
   lineOffset: 0.3,
   /** запас после реплики, чтобы голос не обрывался склейкой */
   lineTail: 0.3,
@@ -180,6 +181,11 @@ export type SceneSource = {
   width: number | null;
   height: number | null;
   hasAudio: boolean;
+  /**
+   * клип «Говорящая голова» (lipsync): губы сгенерированы по реплике, звучащей с 0 с, —
+   * реплика и субтитр начинаются сразу, без TIMING.lineOffset
+   */
+  talking?: boolean;
 };
 
 export type SceneInput = {
@@ -263,6 +269,11 @@ export function chooseFit(width: number | null, height: number | null): Fit {
   return aspect >= 0.45 && aspect <= 0.8 ? "cover" : "contain";
 }
 
+/** Когда в сцене начинаются реплика и субтитр: у «говорящей головы» сразу, иначе через 0,3 с. */
+export function sceneLineOffset(source: Pick<SceneSource, "kind" | "talking">): number {
+  return source.kind === "video" && source.talking ? 0 : TIMING.lineOffset;
+}
+
 /** Длительность сцены и окна реплики/субтитра. Длительность кратна двум кадрам. */
 export function planScene(
   scene: SceneInput,
@@ -276,14 +287,15 @@ export function planScene(
       ? TIMING.imageSeconds
       : Math.max(TIMING.minSceneSeconds, alignDown(source.duration && source.duration > 0 ? source.duration : TIMING.imageSeconds));
   const lineDuration = scene.line && scene.line.duration > 0 ? scene.line.duration : 0;
-  const needed = lineDuration > 0 ? TIMING.lineOffset + lineDuration + TIMING.lineTail : 0;
+  const offset = sceneLineOffset(source);
+  const needed = lineDuration > 0 ? offset + lineDuration + TIMING.lineTail : 0;
   const duration = Math.max(alignUp(base), alignUp(needed));
-  const line = lineDuration > 0 ? { start: TIMING.lineOffset, end: TIMING.lineOffset + lineDuration } : null;
+  const line = lineDuration > 0 ? { start: offset, end: offset + lineDuration } : null;
 
   const text = settings.subtitles ? cleanText(scene.subtitle, LIMITS.maxSubtitleChars) : "";
   let subtitle: SceneSegment["subtitle"] = null;
   if (text) {
-    const subStart = TIMING.lineOffset;
+    const subStart = offset;
     const subEnd = line ? Math.min(duration - 0.05, line.end + 0.25) : duration - TIMING.subtitleTail;
     if (subEnd > subStart) subtitle = { start: subStart, end: subEnd, text };
   }
@@ -537,7 +549,8 @@ export function sceneAudioGraph(segment: SceneSegment, hasLineInput: boolean): s
   const base = segment.clipAudio
     ? `[0:a]asetpts=PTS-STARTPTS,${AUDIO_FORMAT},volume=${MIX.clipAudioDb}dB,apad,${end}`
     : null;
-  const delayMs = Math.round(TIMING.lineOffset * 1000);
+  // реплика звучит с начала своего окна (0,3 с; у «говорящей головы» — 0 с)
+  const delayMs = Math.round((segment.line?.start ?? 0) * 1000);
   const line =
     hasLineInput && segment.line
       ? `[1:a]asetpts=PTS-STARTPTS,${AUDIO_FORMAT},adelay=${delayMs}|${delayMs},apad,${end}`

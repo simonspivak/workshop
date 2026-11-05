@@ -21,6 +21,11 @@ export type StudioMediaItem = {
   voice: string | null;
   /** длительность, если известна по параметрам задачи, с */
   duration: number | null;
+  /**
+   * клип «Говорящая голова» (задача lipsync): губы сделаны по реплике с 0 с, поэтому реплика
+   * в этой сцене звучит без обычной задержки 0,3 с
+   */
+  talking: boolean;
   createdAt: string;
   /** своя генерация или из общей галереи группы */
   own: boolean;

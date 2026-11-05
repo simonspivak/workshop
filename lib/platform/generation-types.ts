@@ -47,6 +47,8 @@ export type MediaOption = {
   label: string;
   /** из библиотеки курса (драйверы движения) */
   library?: boolean;
+  /** задача, из которой файл (озвучка или музыка и т. п.); у библиотеки курса нет */
+  action?: JobAction;
 };
 
 export const jobActionLabels: Record<JobAction, string> = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { isActiveJobStatus, type JobView, type MediaKind } from "@/lib/platform/generation-types";
+import { isActiveJobStatus, type JobAction, type JobView, type MediaKind } from "@/lib/platform/generation-types";
 
 /*
   Браузерная часть генераций: запрос в /api/generate, опрос /api/jobs/[id] раз в 5 секунд
@@ -101,7 +101,8 @@ export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void)
 
 // ---------- корзина референсов ----------
 
-export type TrayItem = { path: string; kind: MediaKind; label: string; url?: string };
+/** action — задача, из которой файл: по нему форма «говорящей головы» отличает озвучку от музыки. */
+export type TrayItem = { path: string; kind: MediaKind; label: string; url?: string; action?: JobAction };
 
 const TRAY_KEY = "iistart:reference-tray";
 const TRAY_MAX = 12;
@@ -126,7 +127,11 @@ function getTray(): TrayItem[] {
       items = parsed
         .filter(
           (item): item is TrayItem =>
-            Boolean(item) && typeof item.path === "string" && typeof item.label === "string" && typeof item.kind === "string",
+            Boolean(item) &&
+            typeof item.path === "string" &&
+            typeof item.label === "string" &&
+            typeof item.kind === "string" &&
+            (item.action === undefined || typeof item.action === "string"),
         )
         .slice(0, TRAY_MAX);
     }
@@ -139,7 +144,10 @@ function getTray(): TrayItem[] {
 
 function writeTray(items: TrayItem[]) {
   try {
-    window.localStorage.setItem(TRAY_KEY, JSON.stringify(items.slice(0, TRAY_MAX).map(({ path, kind, label }) => ({ path, kind, label }))));
+    window.localStorage.setItem(
+      TRAY_KEY,
+      JSON.stringify(items.slice(0, TRAY_MAX).map(({ path, kind, label, action }) => ({ path, kind, label, action }))),
+    );
   } catch {
     // приватный режим или запрет хранилища: корзина просто не запомнится
   }

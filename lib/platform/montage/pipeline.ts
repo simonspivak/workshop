@@ -42,6 +42,8 @@ export type PipelineMedia = { source: string; ext: string };
 
 export type PipelineScene = {
   kind: "video" | "image";
+  /** клип «Говорящая голова»: реплика с 0 с (см. SceneSource.talking) */
+  talking?: boolean;
   media: PipelineMedia;
   line: PipelineMedia | null;
   subtitle: string;
@@ -219,7 +221,14 @@ export async function runPipeline(
 
       const segment = planScene(
         {
-          source: { kind: scene.kind, duration: info.duration, width: info.width, height: info.height, hasAudio: info.hasAudio },
+          source: {
+            kind: scene.kind,
+            duration: info.duration,
+            width: info.width,
+            height: info.height,
+            hasAudio: info.hasAudio,
+            talking: scene.talking === true,
+          },
           line: lineFile ? { duration: lineDuration } : null,
           subtitle: scene.subtitle,
         },

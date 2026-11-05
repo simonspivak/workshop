@@ -174,6 +174,7 @@ function candidates(row: JobListRow, own: boolean): Candidate[] {
         text: kind === "voice" ? lineText(row.params, row.prompt) : null,
         voice: kind === "voice" && typeof p.voice === "string" ? oneLine(p.voice, 40) : null,
         duration: kind === "video" || kind === "music" ? positiveNumber(p.duration) : null,
+        talking: row.action === "lipsync",
         createdAt: row.created_at,
         own,
         author: null,

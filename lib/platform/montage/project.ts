@@ -117,6 +117,7 @@ export function previewPlan(
         width: null,
         height: null,
         hasAudio: false,
+        talking: item.kind === "video" && item.talking === true,
       },
       line: line ? { duration: lineDuration } : null,
       subtitle: scene.subtitle,
@@ -135,6 +136,7 @@ export function toPipelineJob(project: StudioProject, media: MediaIndex, me: str
       const line = scene.lineId ? media.get(scene.lineId) : undefined;
       return {
         kind: item.kind === "image" ? "image" : "video",
+        talking: item.kind === "video" && item.talking === true,
         media: { source: item.url, ext: item.ext },
         line: line ? { source: line.url, ext: line.ext } : null,
         subtitle: scene.subtitle,
