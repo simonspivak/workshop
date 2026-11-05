@@ -16,7 +16,9 @@ const isTableDivider = (line: string) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\
 /** Простой Markdown ответа ИИ: **жирный**, `код`, списки «- » и «1. », заголовки «#», таблицы «| a | b |». Без HTML. */
 export function RichText({ text, className }: { text: string; className?: string }) {
   const blocks: ReactNode[] = [];
-  let list: { ordered: boolean; items: string[] } | null = null;
+  // Номер пункта берём из текста («3.» → 3): модели часто разделяют пункты пустой строкой
+  // или прерывают список подзаголовком, и без этого каждый пункт начинался бы с «1.»
+  let list: { ordered: boolean; items: { text: string; n: number | null }[] } | null = null;
   let table: string[][] | null = null;
 
   const flushTable = () => {
@@ -58,7 +60,9 @@ export function RichText({ text, className }: { text: string; className?: string
     blocks.push(
       <Tag key={blocks.length} className={list.ordered ? "list-decimal space-y-1 pl-5" : "list-disc space-y-1 pl-5"}>
         {list.items.map((item, i) => (
-          <li key={i}>{inline(item)}</li>
+          <li key={i} value={list!.ordered && item.n !== null ? item.n : undefined}>
+            {inline(item.text)}
+          </li>
         ))}
       </Tag>,
     );
@@ -76,16 +80,30 @@ export function RichText({ text, className }: { text: string; className?: string
     }
     flushTable();
     const bullet = /^\s*[-*•]\s+(.*)$/.exec(line);
-    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    const numbered = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
     if (bullet || numbered) {
       const ordered = Boolean(numbered);
       if (list && list.ordered !== ordered) flush();
       list ??= { ordered, items: [] };
-      list.items.push((bullet ?? numbered)![1]);
+      if (numbered) {
+        // «1. 1. 1.» (модель надеется на автонумерацию) — считаем сами, номера только растут
+        const prev = list.items.length ? list.items[list.items.length - 1].n : null;
+        const n = Number(numbered[1]);
+        list.items.push({ text: numbered[2], n: prev !== null && n <= prev ? prev + 1 : n });
+      } else {
+        list.items.push({ text: bullet![1], n: null });
+      }
+      continue;
+    }
+    // пустая строка между пунктами списка его не обрывает
+    if (!line.trim()) continue;
+    // строка с отступом внутри списка — продолжение последнего пункта
+    if (list && /^\s{2,}\S/.test(raw)) {
+      const last = list.items[list.items.length - 1];
+      last.text = `${last.text} ${line.trim()}`;
       continue;
     }
     flush();
-    if (!line.trim()) continue;
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     blocks.push(
       heading ? (

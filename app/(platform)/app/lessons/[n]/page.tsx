@@ -15,7 +15,7 @@ import { listMotionLibrary, listReferenceOptions } from "@/lib/server/gallery";
 import { describeLessonActions } from "@/lib/server/generate-options";
 import { getLessonState } from "@/lib/server/lesson-progress";
 import { QUIZ_BONUS_STARS, quizBonusMinScore } from "@/lib/server/quiz";
-import { LESSON_STEP_HOMEWORK, LESSON_STEP_THEORY, type LessonToolView, type LessonView } from "@/lib/platform/lesson-types";
+import { LESSON_STEP_HOMEWORK, LESSON_STEP_QUIZ, LESSON_STEP_THEORY, type LessonToolView, type LessonView } from "@/lib/platform/lesson-types";
 
 export const metadata: Metadata = { title: "Урок" };
 
@@ -83,21 +83,28 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
       </div>
 
       <nav aria-label="Разделы урока" className="mb-8 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {/* сделанный раздел — жёлтый, как кнопка «Задание выполнено» */}
         {[
-          ...(lesson.theory.length ? [{ href: "#theory", label: "Теория" }] : []),
-          ...lesson.tasks.map((task) => ({ href: `#${task.id}`, label: `Задание ${task.n}` })),
-          ...(lesson.tools.length ? [{ href: "#tools", label: "Инструменты" }] : []),
-          ...(lesson.quiz.length ? [{ href: "#quiz", label: "Тест" }] : []),
-          { href: "#homework", label: "Домашка" },
-        ].map((item) => (
-          <a
-            key={item.href}
-            href={item.href}
-            className="shrink-0 rounded-full bg-white px-4 py-2 text-sm font-semibold ring-1 ring-ink/10 hover:bg-lavender"
-          >
-            {item.label}
-          </a>
-        ))}
+          ...(lesson.theory.length ? [{ href: "#theory", label: "Теория", step: LESSON_STEP_THEORY }] : []),
+          ...lesson.tasks.map((task) => ({ href: `#${task.id}`, label: `Задание ${task.n}`, step: task.id })),
+          ...(lesson.tools.length ? [{ href: "#tools", label: "Инструменты", step: null }] : []),
+          ...(lesson.quiz.length ? [{ href: "#quiz", label: "Тест", step: LESSON_STEP_QUIZ }] : []),
+          { href: "#homework", label: "Домашка", step: LESSON_STEP_HOMEWORK },
+        ].map((item) => {
+          const isDone = item.step !== null && done.has(item.step);
+          return (
+            <a
+              key={item.href}
+              href={item.href}
+              className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ring-1 ${
+                isDone ? "bg-sun ring-sun hover:brightness-95" : "bg-white ring-ink/10 hover:bg-lavender"
+              }`}
+            >
+              {item.label}
+              {isDone && <span className="sr-only"> — сделано</span>}
+            </a>
+          );
+        })}
       </nav>
 
       <div className="space-y-6">
