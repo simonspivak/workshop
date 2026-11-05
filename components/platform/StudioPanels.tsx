@@ -33,9 +33,9 @@ export function StudioMusicPanel({
 }) {
   const name = useId();
   return (
-    <Card title="Музыка" description="Одна тема на серию. Под репликами она сама станет тише.">
+    <Card title="Музыка" description="Одна тема на ролик. Под репликами она сама станет тише.">
       <fieldset disabled={disabled}>
-        <legend className="sr-only">Трек для серии</legend>
+        <legend className="sr-only">Трек для ролика</legend>
         <ul className="divide-y divide-ink/10">
           <li>
             <label className="flex min-h-12 cursor-pointer items-center gap-3 py-2">
@@ -111,14 +111,14 @@ export function StudioDesignPanel({
       <fieldset disabled={disabled} className="grid gap-4">
         <div>
           <label htmlFor={`${id}-title`} className={labelClass}>
-            Название серии
+            Название ролика
           </label>
           <input
             id={`${id}-title`}
             className={`${inputClass} mt-1.5`}
             value={design.title}
             maxLength={LIMITS.maxTitleChars}
-            placeholder="На масле. Серия 1"
+            placeholder="Ханука в 770"
             onChange={(e) => onChange({ title: e.target.value })}
           />
         </div>
@@ -165,7 +165,7 @@ export function StudioDesignPanel({
         )}
         <div className="grid gap-1">
           <Toggle checked={design.label} onChange={(label) => onChange({ label })} title="«Сделано с ИИ» в углу кадра">
-            По правилам курса метка нужна в каждой серии.
+            По правилам курса метка нужна в каждом ролике.
           </Toggle>
           <Toggle checked={design.subtitles} onChange={(subtitles) => onChange({ subtitles })} title="Субтитры">
             Из текста реплик, шрифт Onest.
