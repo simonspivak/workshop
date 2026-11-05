@@ -8,7 +8,8 @@ import { join } from "node:path";
 
 // Модели и цены учеников из price_list (supabase/migrations/20261101200000_init.sql).
 const MODELS = {
-  text: { "claude-haiku-5-5": 1 },
+  // 1★ — «Ответ ИИ», 3★ — «Длинный ответ» (отдельный диалог)
+  text: { "claude-haiku-5-5": [1, 3] },
   image: { "flux-3/klein-text-to-image": 2, "nano-banana-2-1": 5 },
   image_edit: { "flux-3/klein-edit-image": 2, "nano-banana-2-1": 5 },
   video: { "bytedance/seedance-2-mini": 25 },
@@ -74,6 +75,20 @@ for (const file of files) {
     optStr(s.tip, `${path}.tip`, LIMITS.tip);
   };
 
+  // Промпты в шагах нумеруются на экране по порядку: «Промпт 1», «Промпт 2»…
+  // Шаг может ссылаться только на промпт, который уже показан (в этом шаге или раньше).
+  const checkPromptRefs = (steps, path) => {
+    let shown = 0;
+    steps.forEach((s, j) => {
+      if (s && typeof s === "object" && s.prompt) shown++;
+      const text = typeof s === "string" ? s : `${s?.text ?? ""} ${s?.tip ?? ""}`;
+      for (const m of text.matchAll(/промпт[а-я]*\s*(?:№\s*)?(\d+)/gi)) {
+        const n = Number(m[1]);
+        if (n < 1 || n > shown) err(`${path}.steps[${j}]: ссылка на «Промпт ${n}», а показано промптов: ${shown}`);
+      }
+    });
+  };
+
   if (!/^lesson-\d{1,2}$/.test(lesson.id ?? "")) err("id: lesson-N");
   if (!Number.isInteger(lesson.order)) err("order: целое число");
   if (lesson.id !== `lesson-${lesson.order}`) err("id и order не совпадают");
@@ -118,8 +133,12 @@ for (const file of files) {
       const prices = MODELS[a.type];
       if (!prices) return err(`${p}.aiActions[${j}].type: неизвестное действие ${a.type}`);
       if (!(a.model in prices)) return err(`${p}.aiActions[${j}].model: ${a.model} нет у учеников для ${a.type}`);
-      if (a.stars !== prices[a.model]) err(`${p}.aiActions[${j}].stars: ${a.stars}, в прайсе ${prices[a.model]}`);
+      const allowed = [prices[a.model]].flat();
+      if (!allowed.includes(a.stars)) err(`${p}.aiActions[${j}].stars: ${a.stars}, в прайсе ${allowed.join(" или ")}`);
     });
+    if ((t.aiActions ?? []).filter((a) => a.type === "text").length > 1)
+      err(`${p}.aiActions: один чат на задание («Ответ ИИ» или «Длинный ответ»), иначе диалог разделится`);
+    checkPromptRefs(t.steps ?? [], p);
     optStr(t.doneWhen, `${p}.doneWhen`, 260);
   });
 
@@ -169,6 +188,7 @@ for (const file of files) {
     optStr(hw.intro, "homework.intro", 400);
     if (!hw.steps?.length) err("homework.steps: нужны шаги");
     (hw.steps ?? []).forEach((s, j) => step(s, `homework.steps[${j}]`));
+    checkPromptRefs(hw.steps ?? [], "homework");
     str(hw.deliverable, "homework.deliverable", 400);
   }
   (lesson.safety ?? []).forEach((s, i) => str(s, `safety[${i}]`, 260));
