@@ -19,7 +19,7 @@ import { completeJob, markJobSubmitted } from "@/lib/server/jobs";
 import type { ReferenceInput } from "@/lib/server/media-refs";
 import { moderateFields } from "@/lib/server/moderation";
 import { canUse, LONG_TEXT_TOKENS } from "@/lib/server/prices";
-import { resolveReferences } from "@/lib/server/storage";
+import { checkStudentLipsyncAudio, resolveReferences } from "@/lib/server/storage";
 import type { Json } from "@/lib/server/supabase/types";
 import { createJobWithDebit, refundJob, type WalletError } from "@/lib/server/wallet";
 import { ASPECT_RATIOS, VOICE_IDS, type JobView } from "@/lib/platform/generation-types";
@@ -149,6 +149,12 @@ const WALLET_STATUS: Record<WalletError, number> = {
   server_error: 500,
 };
 
+/**
+ * Озвучка ученика — до 600 символов (~40 секунд речи): Gemini TTS у kie оплачивается по длине
+ * аудио, а цена в звёздах одна. Реплики в уроке — до 10 слов. Ведущему — как в схеме (2000).
+ */
+const STUDENT_VOICE_MAX_CHARS = 600;
+
 const HISTORY_CHAR_LIMIT = 13_000; // + новое сообщение (до MAX_PROMPT) укладывается в лимит шлюза 20 000
 
 /** Склеивает прошлые реплики и новое сообщение в один запрос: шлюз принимает только prompt. */
@@ -210,14 +216,33 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
   if (!decision.ok) return { kind: "error", status: 403, error: decision.reason };
   if (!isGatewayModel(input.action, decision.model)) return { kind: "error", status: 400, error: "unknown_model" };
 
-  // 2. модерация
-  const moderation = moderateFields({
+  // Размер запроса ученика: то, что kie считает по длине, а прайс — нет
+  const staff = isStaff(user);
+  if (!staff && input.action === "voice" && input.text.length > STUDENT_VOICE_MAX_CHARS) {
+    return { kind: "error", status: 422, error: "too_long", field: "text" };
+  }
+  // Видео- и аудио-референсы Seedance (kie берёт и за их длину) — только ведущему; ученикам — картинки
+  if (!staff && input.action === "video" && (input.videos?.length || input.audios?.length)) {
+    return { kind: "error", status: 403, error: "bad_reference", field: input.videos?.length ? "videos" : "audios" };
+  }
+
+  // 2. модерация (и реплики ученика из истории диалога: история приходит из браузера)
+  const historyText =
+    input.action === "text" && input.history?.length
+      ? input.history
+          .filter((turn) => turn.role === "user")
+          .map((turn) => turn.text)
+          .join("\n")
+      : undefined;
+  const fieldsResult = moderateFields({
     prompt: "prompt" in input ? input.prompt : undefined,
     text: input.action === "voice" ? input.text : undefined,
     style: input.action === "voice" ? input.style : undefined,
     lyrics: input.action === "music" ? input.lyrics : undefined,
     title: input.action === "music" ? input.title : undefined,
   });
+  // длину истории уже ограничили схема и тело запроса (64 КБ)
+  const moderation = fieldsResult.ok ? moderateFields({ history: historyText }, { maxLength: 64 * 1024 }) : fieldsResult;
   if (!moderation.ok) {
     after(() =>
       audit({
@@ -236,6 +261,9 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
     libraryOnlyVideo: input.action === "motion" && decision.libraryOnly,
   });
   if (!references.ok) return { kind: "error", status: 403, error: references.error };
+  if (!staff && input.action === "lipsync" && !(await checkStudentLipsyncAudio(references.refs.stored.audio ?? ""))) {
+    return { kind: "error", status: 403, error: "lipsync_audio", field: "audio" };
+  }
 
   // 4. списание (пауза, лимит, баланс — в SQL)
   const created = await createJobWithDebit({
@@ -259,7 +287,7 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
       model: decision.model,
       prompt: withHistory(input.prompt, input.history),
       maxTokens: maxTokens ?? LONG_TEXT_TOKENS,
-      staff: isStaff(user),
+      staff,
     });
   }
   return submitTask(created.jobId, created.balance, buildTaskRequest(input, decision.model, references.refs.urls));

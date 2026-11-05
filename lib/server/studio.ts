@@ -305,7 +305,20 @@ async function closeStaleUploads(userId: string): Promise<void> {
     .eq("status", "queued")
     .lt("created_at", before)
     .limit(10);
-  for (const row of data ?? []) await refundJob(row.id, "upload_abandoned");
+  if (!data?.length) return;
+  for (const row of data) await refundJob(row.id, "upload_abandoned");
+  // Файл брошенной загрузки (подписанная ссылка живёт 2 часа) удаляем, чтобы он не занимал Storage.
+  // Только у задач, которые действительно закрылись: готовую в это время задачу не трогаем.
+  const { data: closed } = await admin
+    .from("jobs")
+    .select("id")
+    .in(
+      "id",
+      data.map((row) => row.id),
+    )
+    .eq("status", "failed");
+  const paths = (closed ?? []).map((row) => mediaPath(userId, row.id, "mp4"));
+  if (paths.length) await admin.storage.from(MEDIA_BUCKET).remove(paths).catch(() => undefined);
 }
 
 async function savesToday(userId: string): Promise<number> {
@@ -403,10 +416,14 @@ export async function finishMontageUpload(
   if (error) throw new Error(`studio.complete lookup failed (${error.code})`);
   if (!job || job.user_id !== user.id || job.action !== "montage") return { status: 404, body: { ok: false, error: "not_found" } };
   if (job.status === "done") return { status: 200, body: { ok: true, status: "done" } };
-  if (job.status === "failed") return { status: 409, body: { ok: false, error: "job_failed" } };
 
   const path = mediaPath(user.id, jobId, "mp4");
   const bucket = admin.storage.from(MEDIA_BUCKET);
+  if (job.status === "failed") {
+    // задачу уже закрыли (брошенная загрузка): файл, залитый позже по старой ссылке, не храним
+    await bucket.remove([path]).catch(() => undefined);
+    return { status: 409, body: { ok: false, error: "job_failed" } };
+  }
   const fail = async (reason: string) => {
     await bucket.remove([path]).catch(() => undefined);
     const refunded = await refundJob(jobId, reason);

@@ -1,10 +1,13 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { loginToEmail } from "@/lib/server/accounts";
+import { clientIp, ipRateLimitKey } from "@/lib/server/bot/ratelimit";
 import { homePath } from "@/lib/server/dal/auth";
 import { isSupabaseConfigured } from "@/lib/server/env";
+import { LOGIN_LIMITS, resetAttempts, takeAttempt } from "@/lib/server/rate-limit";
 import { createClient } from "@/lib/server/supabase/server";
 
 export type LoginState = { error: string } | null;
@@ -16,6 +19,7 @@ const schema = z.object({
 });
 
 const WRONG = "Логин или пароль неверны.";
+const TOO_MANY = "Слишком много попыток. Подождите пару минут и попробуйте снова.";
 
 /** Только свои пути кабинета: защита от open redirect через ?next=. */
 function safeNext(next: string | undefined): string | null {
@@ -35,13 +39,20 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   const email = loginToEmail(parsed.data.login);
   if (!email) return { error: WRONG };
 
+  // Защита от перебора паролей: лимит попыток с IP и на логин (Supabase видит только IP сервера)
+  const ip = ipRateLimitKey(clientIp(await headers()) ?? "unknown");
+  if (!(await takeAttempt(LOGIN_LIMITS.ip, ip)) || !(await takeAttempt(LOGIN_LIMITS.account, email))) {
+    return { error: TOO_MANY };
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password: parsed.data.password });
   if (error || !data.user) {
     // Общий текст: по ответу нельзя узнать, существует ли логин
-    if (error?.status === 429) return { error: "Слишком много попыток. Подождите пару минут и попробуйте снова." };
+    if (error?.status === 429) return { error: TOO_MANY };
     return { error: WRONG };
   }
+  await resetAttempts(LOGIN_LIMITS.account, email);
 
   const { data: profile } = await supabase.from("profiles").select("role, disabled").eq("id", data.user.id).maybeSingle();
   if (!profile || profile.disabled) {

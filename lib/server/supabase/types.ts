@@ -146,6 +146,8 @@ type BotMessageRow = {
   ip_hash: string | null;
   telegram_update_id: number | null;
   stars: number;
+  /** ключ входящего сообщения: повтор не записывается (миграция 20261105100000) */
+  dedupe_key: string | null;
   created_at: string;
 };
 
@@ -301,6 +303,24 @@ export type Database = {
         };
         Returns: { balance: number; charged: boolean }[];
       };
+      insert_bot_message: {
+        Args: {
+          p_bot: string;
+          p_channel: BotChannel;
+          p_conversation_id: string;
+          p_role: "user" | "assistant";
+          p_content: string;
+          p_ip_hash?: string | null;
+          p_telegram_update_id?: number | null;
+          p_stars?: number;
+          p_dedupe_key?: string | null;
+          p_sender_per_hour?: number | null;
+          p_bot_per_day?: number | null;
+        };
+        Returns: { message_id: number | null; outcome: "accepted" | "duplicate" | "sender_hour" | "bot_day" }[];
+      };
+      rate_limit_hit: { Args: { p_key: string; p_limit: number; p_window_seconds: number }; Returns: boolean };
+      rate_limit_reset: { Args: { p_key: string }; Returns: undefined };
       record_quiz_attempt: {
         Args: {
           p_user: string;
