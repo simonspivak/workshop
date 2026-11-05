@@ -91,6 +91,12 @@ export function LessonTaskTools({
     return [...created, ...results.filter((j) => !ids.has(j.id))];
   }, [created, results]);
 
+  // Ответы чата видны в переписке над кнопкой. Внизу — картинки, видео и звук; удачные ответы чата
+  // свёрнуты (пригодятся на другом устройстве), неудачные не показываем: ошибка уже была у кнопки,
+  // звёзды вернулись.
+  const mediaJobs = jobs.filter((job) => job.action !== "text");
+  const textJobs = jobs.filter((job) => job.action === "text" && job.status !== "failed");
+
   const onSettled = useCallback(() => router.refresh(), [router]);
 
   const canGenerate = options.length > 0;
@@ -182,12 +188,29 @@ export function LessonTaskTools({
         />
       )}
 
-      {jobs.length > 0 && (
+      {textJobs.length > 0 && (
+        <details className="group rounded-2xl bg-paper ring-1 ring-ink/10">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            Все ответы ИИ по заданию · {textJobs.length}
+            <span className="font-normal text-violet group-open:hidden">Показать</span>
+            <span className="hidden font-normal text-violet group-open:inline">Свернуть</span>
+          </summary>
+          <ul className="space-y-3 px-4 pb-4">
+            {textJobs.map((job) => (
+              <li key={job.id}>
+                <GenerateJobCard job={job} onSettled={onSettled} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {mediaJobs.length > 0 && (
         <div>
           <h4 className="font-mono text-xs tracking-wide text-ink-soft uppercase">Результаты по заданию</h4>
           <ul className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {jobs.map((job) => (
-              <li key={job.id} className={job.action === "text" ? "sm:col-span-2" : ""}>
+            {mediaJobs.map((job) => (
+              <li key={job.id}>
                 <GenerateJobCard job={job} onSettled={onSettled} />
               </li>
             ))}
