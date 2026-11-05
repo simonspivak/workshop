@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, ShieldCheck } from "lucide-react";
 import { QuizForm } from "./QuizForm";
 import { StepToggle } from "./StepToggle";
+import { LessonSteps } from "@/components/platform/LessonSteps";
 import { LessonTaskTools } from "@/components/platform/LessonTaskTools";
+import { RichText } from "@/components/platform/RichText";
 import { Badge, Card, Container, Notice, PageTitle, Skeleton } from "@/components/platform/ui";
 import { getLessonByNumber, getLessonStaffNotes, lessonProgressSteps, listLessons } from "@/lib/server/course";
 import { isStaff, requireUser } from "@/lib/server/dal/auth";
@@ -13,7 +15,7 @@ import { listMotionLibrary, listReferenceOptions } from "@/lib/server/gallery";
 import { describeLessonActions } from "@/lib/server/generate-options";
 import { getLessonState } from "@/lib/server/lesson-progress";
 import { QUIZ_BONUS_STARS, quizBonusMinScore } from "@/lib/server/quiz";
-import { LESSON_STEP_HOMEWORK, LESSON_STEP_THEORY, type LessonView } from "@/lib/platform/lesson-types";
+import { LESSON_STEP_HOMEWORK, LESSON_STEP_THEORY, type LessonToolView, type LessonView } from "@/lib/platform/lesson-types";
 
 export const metadata: Metadata = { title: "Урок" };
 
@@ -84,6 +86,7 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
         {[
           ...(lesson.theory.length ? [{ href: "#theory", label: "Теория" }] : []),
           ...lesson.tasks.map((task) => ({ href: `#${task.id}`, label: `Задание ${task.n}` })),
+          ...(lesson.tools.length ? [{ href: "#tools", label: "Инструменты" }] : []),
           ...(lesson.quiz.length ? [{ href: "#quiz", label: "Тест" }] : []),
           { href: "#homework", label: "Домашка" },
         ].map((item) => (
@@ -134,7 +137,7 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
             </h2>
             {lesson.theory.map((block, i) => (
               <Card key={i} title={block.heading}>
-                <p className="leading-relaxed whitespace-pre-line">{block.body}</p>
+                <RichText text={block.body} className="leading-relaxed" />
                 {block.example && (
                   <div className="mt-4 rounded-2xl bg-lavender p-4">
                     <p className="font-mono text-xs tracking-wide text-ink-soft uppercase">Пример</p>
@@ -166,23 +169,13 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
               <h3 id={`${task.id}-title`} className="mt-2 text-xl font-semibold">
                 {task.title}
               </h3>
-              {task.steps.length > 0 && (
-                <ol className="mt-4 list-decimal space-y-2 pl-5 leading-relaxed marker:font-mono marker:text-ink-soft">
-                  {task.steps.map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                </ol>
-              )}
-              {task.doneWhen && (
-                <p className="mt-4 rounded-2xl bg-sun/30 px-4 py-3 text-sm leading-relaxed">
-                  <span className="font-semibold">Готово, когда: </span>
-                  {task.doneWhen}
-                </p>
-              )}
+              {task.intro && <p className="mt-2 leading-relaxed text-ink-soft">{task.intro}</p>}
               <div className="mt-5">
                 <LessonTaskTools
                   lessonId={lesson.id}
                   taskId={task.id}
+                  steps={task.steps}
+                  doneWhen={task.doneWhen}
                   templates={task.promptTemplates}
                   options={actions[task.id] ?? []}
                   montage={task.aiActions.some((a) => a.type === "montage")}
@@ -198,6 +191,24 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
             </section>
           ))}
         </section>
+
+        {lesson.tools.length > 0 && (
+          <section id="tools" aria-labelledby="tools-title" className="space-y-4">
+            <div className="pt-4">
+              <h2 id="tools-title" className="text-2xl font-bold">
+                Инструменты урока
+              </h2>
+              <p className="mt-1 text-ink-soft">Пользуйся и после курса</p>
+            </div>
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {lesson.tools.map((tool, i) => (
+                <li key={i}>
+                  <ToolCard tool={tool} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {lesson.quiz.length > 0 && (
           <section id="quiz" aria-labelledby="quiz-title" className="space-y-4">
@@ -218,13 +229,8 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
             Домашка
           </h2>
           <Card title={lesson.homework.title}>
-            {lesson.homework.steps.length > 0 && (
-              <ol className="list-decimal space-y-2 pl-5 leading-relaxed marker:font-mono marker:text-ink-soft">
-                {lesson.homework.steps.map((step, i) => (
-                  <li key={i}>{step}</li>
-                ))}
-              </ol>
-            )}
+            {lesson.homework.intro && <p className="mb-4 leading-relaxed text-ink-soft">{lesson.homework.intro}</p>}
+            {lesson.homework.steps.length > 0 && <LessonSteps steps={lesson.homework.steps} />}
             {lesson.homework.deliverable && (
               <p className="mt-4 rounded-2xl bg-lavender p-4 leading-relaxed">
                 <span className="font-semibold">Что сдать: </span>
@@ -289,6 +295,32 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
         )}
       </nav>
     </article>
+  );
+}
+
+function ToolCard({ tool }: { tool: LessonToolView }) {
+  const host = URL.canParse(tool.url) ? new URL(tool.url).hostname.replace(/^www\./, "") : null;
+  return (
+    <div className="h-full rounded-3xl bg-white p-5 ring-1 ring-ink/10">
+      <a
+        href={tool.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 text-lg font-semibold break-words text-violet underline-offset-4 hover:underline"
+      >
+        {tool.name}
+        <ExternalLink aria-hidden="true" className="size-4 shrink-0" />
+        <span className="sr-only"> (откроется в новой вкладке)</span>
+      </a>
+      {host && <p className="font-mono text-xs break-all text-ink-soft">{host}</p>}
+      <p className="mt-2 leading-relaxed break-words">{tool.what}</p>
+      {(tool.cost || tool.age) && (
+        <p className="mt-3 flex flex-wrap gap-2">
+          {tool.cost && <Badge>Цена: {tool.cost}</Badge>}
+          {tool.age && <Badge tone="sun">Возраст: {tool.age}</Badge>}
+        </p>
+      )}
+    </div>
   );
 }
 

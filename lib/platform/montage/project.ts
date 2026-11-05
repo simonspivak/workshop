@@ -1,4 +1,13 @@
-import { LIMITS, planMontage, type EncodeOptions, type MontageSettings, type PlanResult, type TitleCard } from "./args";
+import {
+  LIMITS,
+  MUSIC_LEVEL_DB,
+  planMontage,
+  type EncodeOptions,
+  type MontageSettings,
+  type MusicLevel,
+  type PlanResult,
+  type TitleCard,
+} from "./args";
 import type { PipelineJob } from "./pipeline";
 import type { StudioMediaItem } from "./types";
 
@@ -25,6 +34,7 @@ export type StudioDesign = {
   subtitles: boolean;
   clipAudio: boolean;
   kenBurns: boolean;
+  musicLevel: MusicLevel;
 };
 
 export type StudioProject = { scenes: StudioScene[]; musicId: string | null; design: StudioDesign };
@@ -37,6 +47,7 @@ export const DEFAULT_DESIGN: StudioDesign = {
   subtitles: true,
   clipAudio: false,
   kenBurns: true,
+  musicLevel: "normal",
 };
 
 export const EMPTY_PROJECT: StudioProject = { scenes: [], musicId: null, design: DEFAULT_DESIGN };
@@ -73,6 +84,7 @@ export function settingsOf(project: StudioProject, media: MediaIndex, me: string
     kenBurns: design.kenBurns,
     title: titleCard(project, media, me),
     music: Boolean(project.musicId && media.has(project.musicId)),
+    musicLevel: design.musicLevel,
   };
 }
 
@@ -135,6 +147,7 @@ export function toPipelineJob(project: StudioProject, media: MediaIndex, me: str
       clipAudio: settings.clipAudio,
       kenBurns: settings.kenBurns,
       title: settings.title,
+      musicLevel: settings.musicLevel,
     },
     encode,
   };
@@ -165,6 +178,7 @@ export function loadDraft(): StudioProject | null {
     const scenes = Array.isArray(parsed.scenes) ? parsed.scenes.filter(isScene).slice(0, LIMITS.maxScenes) : [];
     const design = { ...DEFAULT_DESIGN, ...(parsed.design && typeof parsed.design === "object" ? parsed.design : {}) };
     if (!["none", "start", "end"].includes(design.titleCard)) design.titleCard = "end";
+    if (!Object.hasOwn(MUSIC_LEVEL_DB, design.musicLevel)) design.musicLevel = "normal";
     return { scenes, musicId: typeof parsed.musicId === "string" ? parsed.musicId : null, design };
   } catch {
     return null;
