@@ -1,11 +1,58 @@
 import { Fragment, type ReactNode } from "react";
 
-/** Простой Markdown ответа ИИ: **жирный**, `код`, списки «- » и «1. », заголовки «#». Без HTML. */
+/** Ячейки строки таблицы Markdown: «| a | b |» → ["a", "b"]. */
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+const isTableRow = (line: string) => /^\s*\|.*\|\s*$/.test(line);
+const isTableDivider = (line: string) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+
+/** Простой Markdown ответа ИИ: **жирный**, `код`, списки «- » и «1. », заголовки «#», таблицы «| a | b |». Без HTML. */
 export function RichText({ text, className }: { text: string; className?: string }) {
   const blocks: ReactNode[] = [];
   let list: { ordered: boolean; items: string[] } | null = null;
+  let table: string[][] | null = null;
+
+  const flushTable = () => {
+    if (!table) return;
+    const [head, ...body] = table;
+    blocks.push(
+      <div key={blocks.length} className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-sm">
+          <thead>
+            <tr>
+              {head.map((cell, i) => (
+                <th key={i} className="border-b border-ink/20 px-2 py-1.5 align-top font-semibold">
+                  {inline(cell)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, r) => (
+              <tr key={r}>
+                {head.map((_, i) => (
+                  <td key={i} className="border-b border-ink/10 px-2 py-1.5 align-top">
+                    {inline(row[i] ?? "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>,
+    );
+    table = null;
+  };
 
   const flush = () => {
+    flushTable();
     if (!list) return;
     const Tag = list.ordered ? "ol" : "ul";
     blocks.push(
@@ -20,6 +67,14 @@ export function RichText({ text, className }: { text: string; className?: string
 
   for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
     const line = raw.trimEnd();
+    if (isTableRow(line) || (table && isTableDivider(line))) {
+      if (list) flush();
+      if (isTableDivider(line)) continue;
+      table ??= [];
+      table.push(tableCells(line));
+      continue;
+    }
+    flushTable();
     const bullet = /^\s*[-*•]\s+(.*)$/.exec(line);
     const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
     if (bullet || numbered) {
