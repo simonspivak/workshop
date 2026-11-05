@@ -1,5 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { PlatformHeader } from "@/components/platform/PlatformHeader";
+
+// В кабинете — просто «ИИ-старт»: число уроков зависит от группы (у 770 их пять).
+export const metadata: Metadata = { title: { default: "Кабинет · ИИ-старт", template: "%s · ИИ-старт" } };
 
 // Кабинет: своя шапка (вход, баланс, выход) и короткий подвал. Страницы читают сессию за <Suspense>.
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {

@@ -19,13 +19,24 @@ function useLoginUrl(): string {
   );
 }
 
+/** Печать карточек: имя файла PDF — по группе, а не по заголовку страницы. */
+function printCards(groupCode: string, groupTitle: string) {
+  const previous = document.title;
+  const day = new Date().toISOString().slice(0, 10);
+  document.title = `Логины ${groupCode} · ${groupTitle} · ${day}`;
+  window.addEventListener("afterprint", () => (document.title = previous), { once: true });
+  window.print();
+}
+
 export function CreateStudents({
   groupId,
   groupCode,
+  groupTitle,
   starsPerStudent,
 }: {
   groupId: string;
   groupCode: string;
+  groupTitle: string;
   starsPerStudent: number | null;
 }) {
   const [state, action] = useActionState<CreateStudentsResult | null, FormData>(createStudents, null);
@@ -123,7 +134,7 @@ export function CreateStudents({
                     </tbody>
                   </table>
                 </div>
-                <button type="button" onClick={() => window.print()} className={`${buttonClass("secondary")} mt-4`}>
+                <button type="button" onClick={() => printCards(groupCode, groupTitle)} className={`${buttonClass("secondary")} mt-4`}>
                   <Printer aria-hidden="true" className="size-5" /> Печать карточек
                 </button>
               </>
