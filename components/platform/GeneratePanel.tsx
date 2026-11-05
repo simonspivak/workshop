@@ -3,6 +3,7 @@
 import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import { RichText } from "@/components/platform/RichText";
 import { Sparkles } from "lucide-react";
+import { useCopy } from "@/components/platform/CopyButton";
 import { newIdempotencyKey, postGenerate } from "@/components/platform/GenerateClient";
 import { GenerateReferencePicker } from "@/components/platform/GenerateReferencePicker";
 import { Notice, Stars, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
@@ -92,6 +93,7 @@ export function GeneratePanel({
       /* игнорируем */
     }
   }
+  const transcript = useCopy();
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   // один ключ на одно намерение: повтор после сбоя сети не спишет второй раз
@@ -225,9 +227,18 @@ export function GeneratePanel({
           </ol>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-soft">
             <span>Напишите ответ ниже — ИИ помнит весь разговор. Каждое сообщение — {stars} ★.</span>
-            <button type="button" onClick={() => saveThread([])} className="font-semibold text-violet underline-offset-4 hover:underline">
-              Новый диалог
-            </button>
+            <span className="flex flex-wrap gap-x-4 gap-y-1">
+              <button
+                type="button"
+                onClick={() => transcript.copy(threadAsText(thread))}
+                className="font-semibold text-violet underline-offset-4 hover:underline"
+              >
+                {transcript.copied ? "Скопировано" : "Скопировать переписку"}
+              </button>
+              <button type="button" onClick={() => saveThread([])} className="font-semibold text-violet underline-offset-4 hover:underline">
+                Новый диалог
+              </button>
+            </span>
           </div>
         </div>
       )}
@@ -480,6 +491,12 @@ function ModeChoice({
 }
 
 type ThreadTurn = { role: "user" | "assistant"; text: string };
+
+/** Переписка простым текстом для сдачи: «Промпт 1: … Ответ ИИ: … Промпт 2: …». */
+function threadAsText(thread: readonly ThreadTurn[]): string {
+  let n = 0;
+  return thread.map((turn) => (turn.role === "user" ? `Промпт ${++n}:\n${turn.text}` : `Ответ ИИ:\n${turn.text}`)).join("\n\n");
+}
 
 function readThread(key: string | null): ThreadTurn[] {
   if (!key || typeof window === "undefined") return [];

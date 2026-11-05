@@ -266,7 +266,7 @@ export async function runPipeline(
     const output = "montage.mp4";
     created.add(output);
     // финал быстрый: видео копируется без перекодирования, кодируется только звук
-    await run(finalArgs(plan, { videoList: "video.txt", audioList: "audio.txt", music: musicFile, output }), 0);
+    await run(finalArgs(plan, { videoList: "video.txt", audioList: "audio.txt", music: musicFile, output }, job.settings.musicLevel), 0);
     const data = await backend.read(output);
     return { data, plan, probes };
   } finally {

@@ -1,22 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, Clapperboard, ClipboardPaste, Copy, Lock } from "lucide-react";
+import { ArrowRight, Clapperboard, ClipboardPaste, Lock } from "lucide-react";
+import { CopyButton } from "@/components/platform/CopyButton";
 import { GenerateJobCard } from "@/components/platform/GenerateJobCard";
 import { GeneratePanel } from "@/components/platform/GeneratePanel";
+import { LessonSteps } from "@/components/platform/LessonSteps";
 import { Stars, buttonClass } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import { jobActionLabels, type GenerateActionOption, type JobView, type MediaOption } from "@/lib/platform/generation-types";
+import type { LessonStepView } from "@/lib/platform/lesson-types";
 
 /**
- * Инструменты задания урока: шаблоны промптов (скопировать или вставить в запрос),
- * кнопки ИИ-действий с ценой, форма генерации и результаты по заданию.
+ * Задание урока в браузере: шаги с промптами («Вставить в чат» кладёт промпт в запрос чата задания),
+ * шаблоны промптов (скопировать или вставить в запрос), кнопки ИИ-действий с ценой,
+ * форма генерации и результаты по заданию.
  */
 export function LessonTaskTools({
   lessonId,
   taskId,
+  steps,
+  doneWhen,
   templates,
   options,
   montage,
@@ -27,6 +33,8 @@ export function LessonTaskTools({
 }: {
   lessonId: string;
   taskId: string;
+  steps: LessonStepView[];
+  doneWhen: string | null;
   templates: string[];
   options: GenerateActionOption[];
   montage: boolean;
@@ -40,18 +48,37 @@ export function LessonTaskTools({
   const [prompt, setPrompt] = useState("");
   const [created, setCreated] = useState<JobView[]>([]);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  // запрос «прокрути к полю и поставь курсор»: счётчик, эффект ниже
+  const [focusRequest, setFocusRequest] = useState(0);
 
   const selected = options.find((o) => o.key === selectedKey) ?? null;
   const firstAvailable = options.find((o) => o.available) ?? null;
+  // чат задания: первая текстовая кнопка («Ответ ИИ» или «Длинный ответ»)
+  const chat = options.find((o) => o.action === "text") ?? null;
 
-  const insertTemplate = (template: string) => {
-    if (!selected && firstAvailable) setSelectedKey(firstAvailable.key);
-    setPrompt((current) => (current.trim() ? `${current.trimEnd()}\n\n${template}` : template));
-    requestAnimationFrame(() => {
-      promptRef.current?.focus();
-      promptRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
+  // Текст в поле запроса: выбрать действие, дописать или заменить текст, прокрутить к полю.
+  // Переписку не трогаем: она живёт в GeneratePanel и в localStorage.
+  const insertText = (text: string, { option, replace }: { option: GenerateActionOption | null; replace: boolean }) => {
+    if (option) setSelectedKey(option.key);
+    setPrompt((current) => (replace || !current.trim() ? text : `${current.trimEnd()}\n\n${text}`));
+    setFocusRequest((n) => n + 1);
   };
+  // шаблон — в выбранное действие (или первое доступное), дописывается к запросу
+  const insertTemplate = (template: string) => insertText(template, { option: selected ?? firstAvailable, replace: false });
+  // промпт из шага — в чат задания, заменяет текст запроса. Если уже открыт другой текстовый чат
+  // (в старых уроках их бывает два), остаёмся в нём: его переписка не должна пропасть с экрана.
+  const insertPrompt = chat?.available
+    ? (text: string) => insertText(text, { option: selected?.action === "text" ? selected : chat, replace: true })
+    : undefined;
+
+  // после рендера: форма могла только что появиться (выбрано действие), поэтому фокус — в эффекте
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    const field = promptRef.current;
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    field.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusRequest]);
 
   // новые результаты сверху; после router.refresh() сервер пришлёт их же — не дублируем
   const jobs = useMemo(() => {
@@ -65,6 +92,15 @@ export function LessonTaskTools({
 
   return (
     <div className="space-y-5">
+      {steps.length > 0 && <LessonSteps steps={steps} onInsert={insertPrompt} />}
+
+      {doneWhen && (
+        <p className="rounded-2xl bg-sun/30 px-4 py-3 text-sm leading-relaxed">
+          <span className="font-semibold">Готово, когда: </span>
+          {doneWhen}
+        </p>
+      )}
+
       {templates.length > 0 && (
         <details className="group rounded-2xl bg-paper ring-1 ring-ink/10" open={templates.length <= 2}>
           <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold [&::-webkit-details-marker]:hidden">
@@ -189,28 +225,6 @@ function ActionChip({
       <span>{label}</span>
       <span className={`font-normal ${selected ? "text-white/80" : "text-ink-soft"}`}>{option.modelLabel}</span>
       <span className="font-mono text-xs">{staff ? "демо" : <Stars value={option.stars} />}</span>
-    </button>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className={buttonClass("secondary", "sm")}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        } catch {
-          setCopied(false);
-        }
-      }}
-    >
-      {copied ? <Check aria-hidden="true" className="size-4" /> : <Copy aria-hidden="true" className="size-4" />}
-      {copied ? "Скопировано" : "Скопировать"}
     </button>
   );
 }

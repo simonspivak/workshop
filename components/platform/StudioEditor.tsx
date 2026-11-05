@@ -571,9 +571,11 @@ export function StudioEditor({
         <StudioMusicPanel
           tracks={tracks}
           musicId={project.musicId}
+          level={project.design.musicLevel}
           disabled={locked}
           preview={preview}
           onChange={(musicId) => update((p) => ({ ...p, musicId }))}
+          onLevel={(musicLevel) => setDesign({ musicLevel })}
         />
       </div>
 

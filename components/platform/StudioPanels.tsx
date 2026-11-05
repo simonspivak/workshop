@@ -6,6 +6,7 @@ import { Download, LoaderCircle, Save, Square, Wand2 } from "lucide-react";
 import { LIMITS } from "@/lib/platform/montage/args";
 import type { EngineProgress } from "@/lib/platform/montage/engine";
 import { formatEta, formatMegabytes, formatSeconds } from "@/lib/platform/montage/messages";
+import type { MusicLevel } from "@/lib/platform/montage/args";
 import type { StudioDesign } from "@/lib/platform/montage/project";
 import type { StudioMediaItem } from "@/lib/platform/montage/types";
 import { Badge, Card, Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
@@ -16,15 +17,19 @@ import { PlayButton } from "@/components/platform/StudioThumb";
 export function StudioMusicPanel({
   tracks,
   musicId,
+  level,
   disabled,
   preview,
   onChange,
+  onLevel,
 }: {
   tracks: StudioMediaItem[];
   musicId: string | null;
+  level: MusicLevel;
   disabled: boolean;
   preview: { playing: string | null; toggle: (id: string, url: string) => void };
   onChange: (id: string | null) => void;
+  onLevel: (level: MusicLevel) => void;
 }) {
   const name = useId();
   return (
@@ -62,6 +67,25 @@ export function StudioMusicPanel({
         </ul>
       </fieldset>
       {tracks.length === 0 && <p className={hintClass}>Треков пока нет — тема из Suno появится здесь, когда будет готова.</p>}
+      {musicId !== null && (
+        <div className="mt-4">
+          <label htmlFor={`${name}-level`} className={labelClass}>
+            Громкость музыки
+          </label>
+          <select
+            id={`${name}-level`}
+            className={`${inputClass} mt-1.5`}
+            value={level}
+            disabled={disabled}
+            onChange={(e) => onLevel(e.target.value as MusicLevel)}
+          >
+            <option value="quiet">Тише</option>
+            <option value="normal">Обычно</option>
+            <option value="loud">Громче</option>
+          </select>
+          <p className={hintClass}>Голос всё равно звучит громче музыки.</p>
+        </div>
+      )}
     </Card>
   );
 }
