@@ -21,7 +21,8 @@ import { mockMedia, type MockMediaKind } from "@/lib/server/mock-media";
 // ---------- модели (белый список шлюза; первая — по умолчанию) ----------
 
 export const GATEWAY_MODELS = {
-  text: ["claude-haiku-5-5", "gpt-6-luna", "claude-sonnet-5-5"],
+  // kimi-k3 — запасная (шлюз собирает её в «Доработке запроса», см. docs/kie-gateway.md)
+  text: ["claude-haiku-5-5", "gpt-6-luna", "claude-sonnet-5-5", "kimi-k3"],
   image: ["nano-banana-2-1", "flux-3/klein-text-to-image", "nano-banana-pro"],
   image_edit: ["nano-banana-2-1", "flux-3/klein-edit-image", "nano-banana-pro"],
   video: [
@@ -176,14 +177,15 @@ export function isMockMode(): boolean {
 /*
   kie иногда перегружен: отвечает 502/503/429 «Resources are tight, please try again later».
   Такой отказ приходит быстро и задачу не создаёт, поэтому повторяем сами: два раза с паузой,
-  а для текста Haiku чередуем с запасной моделью другого поставщика (GPT, проверена).
+  а для текста Haiku чередуем с запасными моделями других поставщиков: Kimi K3 (5 ноября на kie
+  ~95% успешных ответов против ~10% у Haiku) и GPT 6 Luna.
   Таймаут и «неизвестно, создана ли задача» не повторяем: время кончилось или kie мог списать.
 */
 // Окна перегрузки kie длятся минутами, но часть запросов проходит: 5 попыток за ~30 с
 const RETRY_DELAYS_MS = [1500, 3000, 5000, 8000];
 /** Вся попытка с повторами укладывается в функцию (maxDuration 60 с) с запасом на базу. */
 const RETRY_BUDGET_MS = { text: 50_000, create: 45_000 };
-const TEXT_FALLBACK_MODEL: ModelFor<"text"> = "gpt-6-luna";
+const TEXT_FALLBACK_MODELS: ModelFor<"text">[] = ["kimi-k3", "gpt-6-luna"];
 
 /** Временный отказ kie или шлюза: можно повторить. */
 export function isTransientFailure(result: GatewayFailure): boolean {
@@ -222,7 +224,7 @@ export async function generateText(request: Omit<TextRequest, "action">): Promis
   const primary = request.model ?? GATEWAY_MODELS.text[0];
   const models: ModelFor<"text">[] =
     primary === "claude-haiku-5-5"
-      ? [primary, primary, TEXT_FALLBACK_MODEL, primary, TEXT_FALLBACK_MODEL]
+      ? [primary, TEXT_FALLBACK_MODELS[0], TEXT_FALLBACK_MODELS[0], primary, TEXT_FALLBACK_MODELS[1]]
       : [primary, primary, primary, primary, primary];
   return withRetries<TextResult>(RETRY_BUDGET_MS.text, models.length, async (i, timeoutMs) => {
     const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs), false);
