@@ -115,7 +115,7 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </div>
 
-      <CreateStudents groupId={group.id} groupCode={group.code} starsPerStudent={group.starsPerStudent} />
+      <CreateStudents groupId={group.id} groupCode={group.code} groupTitle={group.title} starsPerStudent={group.starsPerStudent} />
 
       <Card title={`Ученики · ${students.length}`} className="print:hidden">
         <StudentList
