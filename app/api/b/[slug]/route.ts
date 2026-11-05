@@ -6,7 +6,7 @@ import { toChatReply } from "@/lib/server/bot/chat";
 import { botFail } from "@/lib/server/bot/errors";
 import { BodyError, isSameOrigin, jsonResponse, readJson } from "@/lib/server/bot/http";
 import { BOT_LIMITS } from "@/lib/server/bot/limits";
-import { clientIp } from "@/lib/server/bot/ratelimit";
+import { clientIp, ipRateLimitKey } from "@/lib/server/bot/ratelimit";
 import { BOT_SESSION_COOKIE, hashSender, isSessionId, newSessionId, webConversationId } from "@/lib/server/bot/secrets";
 import { SLUG_RE } from "@/lib/server/bot/slug";
 import { loadBotBySlug } from "@/lib/server/bot/store";
@@ -63,7 +63,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/b/[slug
         preview: false,
         text: body.text,
         chargeKey: `bot:${bot.id}:${body.messageId}`,
-        senderHash: hashSender("ip", ip),
+        // IPv6 — по сети /64: иначе лимит обходится сменой адреса
+        senderHash: hashSender("ip", ipRateLimitKey(ip)),
       });
       payload = toChatReply(result, { botId: bot.id, conversationId });
     } else {

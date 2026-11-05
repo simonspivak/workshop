@@ -7,14 +7,15 @@
 
   Конвейер (по одной сцене, чтобы не держать всё в памяти):
     1. Каждая сцена → seg-N.mp4 (только видео, h264) + seg-N.wav (PCM 44,1 кГц стерео):
-       кадр 480×854, 24 fps, реплика с 0,3 с, субтитр и метка «Сделано с ИИ» прожигаются здесь же.
+       кадр 480×854, 24 fps, реплика с 0,3 с (у «говорящей головы» — с 0 с: губы сделаны по этой
+       реплике с самого начала клипа), субтитр и метка «Сделано с ИИ» прожигаются здесь же.
        Если реплика длиннее клипа, последний кадр стоит (tpad clone).
        Длительность сцены кратна двум кадрам (1/12 с): тогда и кадры, и сэмплы целые,
        и склейка не уплывает по синхрону.
     2. Титр (по желанию) — такой же сегмент из цветного фона.
-    3. Финал: concat видео без перекодирования, concat звука, музыка −14 dB с приглушением
-       ещё на −10 dB под репликами (автоматизация громкости по известным окнам реплик),
-       кодирование звука в AAC один раз.
+    3. Финал: concat видео без перекодирования, concat звука, музыка −10 dB с приглушением
+       ещё на −6 dB под репликами (−16 dB под голосом: музыку слышно, голос сверху;
+       автоматизация громкости по известным окнам реплик), кодирование звука в AAC один раз.
 */
 
 export const OUTPUT = { width: 480, height: 854, fps: 24, sampleRate: 44100 } as const;
@@ -28,7 +29,7 @@ export const LIMITS = {
 } as const;
 
 export const TIMING = {
-  /** реплика начинается через 0,3 с после начала клипа */
+  /** реплика начинается через 0,3 с после начала клипа (кроме «говорящей головы»: там с 0 с) */
   lineOffset: 0.3,
   /** запас после реплики, чтобы голос не обрывался склейкой */
   lineTail: 0.3,
@@ -45,11 +46,17 @@ export const TIMING = {
 } as const;
 
 export const MIX = {
-  musicDb: -14,
-  duckDb: -10,
+  /** фон музыки относительно исходной дорожки */
+  musicDb: -10,
+  /** ещё тише под репликой: итого −16 dB, голос заметно громче музыки, но музыку слышно */
+  duckDb: -6,
   /** собственный звук клипа (если оставлен) под репликой */
   clipAudioDb: -6,
 } as const;
+
+/** Выбор в студии «Громкость музыки»: сдвиг музыки целиком (и фон, и под репликой), dB. */
+export type MusicLevel = "quiet" | "normal" | "loud";
+export const MUSIC_LEVEL_DB: Record<MusicLevel, number> = { quiet: -4, normal: 0, loud: 4 };
 
 /**
  * Каталог шрифтов в ФС ffmpeg (относительно рабочего каталога, как и все пути здесь:
@@ -174,6 +181,11 @@ export type SceneSource = {
   width: number | null;
   height: number | null;
   hasAudio: boolean;
+  /**
+   * клип «Говорящая голова» (lipsync): губы сгенерированы по реплике, звучащей с 0 с, —
+   * реплика и субтитр начинаются сразу, без TIMING.lineOffset
+   */
+  talking?: boolean;
 };
 
 export type SceneInput = {
@@ -196,6 +208,8 @@ export type MontageSettings = {
   kenBurns: boolean;
   title: TitleCard | null;
   music: boolean;
+  /** нет — «обычно» */
+  musicLevel?: MusicLevel;
 };
 
 export type Window = { start: number; end: number };
@@ -255,6 +269,11 @@ export function chooseFit(width: number | null, height: number | null): Fit {
   return aspect >= 0.45 && aspect <= 0.8 ? "cover" : "contain";
 }
 
+/** Когда в сцене начинаются реплика и субтитр: у «говорящей головы» сразу, иначе через 0,3 с. */
+export function sceneLineOffset(source: Pick<SceneSource, "kind" | "talking">): number {
+  return source.kind === "video" && source.talking ? 0 : TIMING.lineOffset;
+}
+
 /** Длительность сцены и окна реплики/субтитра. Длительность кратна двум кадрам. */
 export function planScene(
   scene: SceneInput,
@@ -268,14 +287,15 @@ export function planScene(
       ? TIMING.imageSeconds
       : Math.max(TIMING.minSceneSeconds, alignDown(source.duration && source.duration > 0 ? source.duration : TIMING.imageSeconds));
   const lineDuration = scene.line && scene.line.duration > 0 ? scene.line.duration : 0;
-  const needed = lineDuration > 0 ? TIMING.lineOffset + lineDuration + TIMING.lineTail : 0;
+  const offset = sceneLineOffset(source);
+  const needed = lineDuration > 0 ? offset + lineDuration + TIMING.lineTail : 0;
   const duration = Math.max(alignUp(base), alignUp(needed));
-  const line = lineDuration > 0 ? { start: TIMING.lineOffset, end: TIMING.lineOffset + lineDuration } : null;
+  const line = lineDuration > 0 ? { start: offset, end: offset + lineDuration } : null;
 
   const text = settings.subtitles ? cleanText(scene.subtitle, LIMITS.maxSubtitleChars) : "";
   let subtitle: SceneSegment["subtitle"] = null;
   if (text) {
-    const subStart = TIMING.lineOffset;
+    const subStart = offset;
     const subEnd = line ? Math.min(duration - 0.05, line.end + 0.25) : duration - TIMING.subtitleTail;
     if (subEnd > subStart) subtitle = { start: subStart, end: subEnd, text };
   }
@@ -529,7 +549,8 @@ export function sceneAudioGraph(segment: SceneSegment, hasLineInput: boolean): s
   const base = segment.clipAudio
     ? `[0:a]asetpts=PTS-STARTPTS,${AUDIO_FORMAT},volume=${MIX.clipAudioDb}dB,apad,${end}`
     : null;
-  const delayMs = Math.round(TIMING.lineOffset * 1000);
+  // реплика звучит с начала своего окна (0,3 с; у «говорящей головы» — 0 с)
+  const delayMs = Math.round((segment.line?.start ?? 0) * 1000);
   const line =
     hasLineInput && segment.line
       ? `[1:a]asetpts=PTS-STARTPTS,${AUDIO_FORMAT},adelay=${delayMs}|${delayMs},apad,${end}`
@@ -601,10 +622,11 @@ function num(value: number): string {
 
 /**
  * Громкость музыки во времени (выражение ffmpeg, t — секунды):
- * −14 dB всегда, ещё −10 dB внутри окон реплик, с плавным входом и выходом.
+ * −10 dB всегда, ещё −6 dB внутри окон реплик, с плавным входом и выходом.
+ * levelDb — сдвиг из «Громкость музыки» (MUSIC_LEVEL_DB), на всю музыку.
  */
-export function duckExpression(windows: readonly Window[]): string {
-  const base = dbToGain(MIX.musicDb);
+export function duckExpression(windows: readonly Window[], levelDb = 0): string {
+  const base = dbToGain(MIX.musicDb + levelDb);
   if (windows.length === 0) return num(base);
   const depth = 1 - dbToGain(MIX.duckDb);
   const a = TIMING.duckAttack;
@@ -622,6 +644,7 @@ export function duckExpression(windows: readonly Window[]): string {
 export function finalArgs(
   plan: Pick<MontagePlan, "duration" | "duckWindows">,
   files: { videoList: string; audioList: string; music: string | null; output: string },
+  musicLevel: MusicLevel = "normal",
 ): string[] {
   const total = plan.duration;
   const inputs = ["-f", "concat", "-safe", "0", "-i", files.videoList, "-f", "concat", "-safe", "0", "-i", files.audioList];
@@ -639,7 +662,7 @@ export function finalArgs(
     `atrim=end_sample=${sampleCount(total)}`,
     // кадры по 10 мс: громкость меняется плавно, без «ступенек»
     `asetnsamples=n=${OUTPUT.sampleRate / 100}:p=0`,
-    `volume='${duckExpression(plan.duckWindows)}':eval=frame`,
+    `volume='${duckExpression(plan.duckWindows, MUSIC_LEVEL_DB[musicLevel] ?? 0)}':eval=frame`,
     "afade=t=in:d=0.05",
     `afade=t=out:st=${sec(fadeStart)}:d=${sec(Math.min(TIMING.musicFadeOut, total))}`,
   ].join(",");

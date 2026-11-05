@@ -6,6 +6,7 @@ import { Download, LoaderCircle, Save, Square, Wand2 } from "lucide-react";
 import { LIMITS } from "@/lib/platform/montage/args";
 import type { EngineProgress } from "@/lib/platform/montage/engine";
 import { formatEta, formatMegabytes, formatSeconds } from "@/lib/platform/montage/messages";
+import type { MusicLevel } from "@/lib/platform/montage/args";
 import type { StudioDesign } from "@/lib/platform/montage/project";
 import type { StudioMediaItem } from "@/lib/platform/montage/types";
 import { Badge, Card, Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
@@ -16,21 +17,25 @@ import { PlayButton } from "@/components/platform/StudioThumb";
 export function StudioMusicPanel({
   tracks,
   musicId,
+  level,
   disabled,
   preview,
   onChange,
+  onLevel,
 }: {
   tracks: StudioMediaItem[];
   musicId: string | null;
+  level: MusicLevel;
   disabled: boolean;
   preview: { playing: string | null; toggle: (id: string, url: string) => void };
   onChange: (id: string | null) => void;
+  onLevel: (level: MusicLevel) => void;
 }) {
   const name = useId();
   return (
-    <Card title="Музыка" description="Одна тема на серию. Под репликами она сама станет тише.">
+    <Card title="Музыка" description="Одна тема на ролик. Под репликами она сама станет тише.">
       <fieldset disabled={disabled}>
-        <legend className="sr-only">Трек для серии</legend>
+        <legend className="sr-only">Трек для ролика</legend>
         <ul className="divide-y divide-ink/10">
           <li>
             <label className="flex min-h-12 cursor-pointer items-center gap-3 py-2">
@@ -62,6 +67,25 @@ export function StudioMusicPanel({
         </ul>
       </fieldset>
       {tracks.length === 0 && <p className={hintClass}>Треков пока нет — тема из Suno появится здесь, когда будет готова.</p>}
+      {musicId !== null && (
+        <div className="mt-4">
+          <label htmlFor={`${name}-level`} className={labelClass}>
+            Громкость музыки
+          </label>
+          <select
+            id={`${name}-level`}
+            className={`${inputClass} mt-1.5`}
+            value={level}
+            disabled={disabled}
+            onChange={(e) => onLevel(e.target.value as MusicLevel)}
+          >
+            <option value="quiet">Тише</option>
+            <option value="normal">Обычно</option>
+            <option value="loud">Громче</option>
+          </select>
+          <p className={hintClass}>Голос всё равно звучит громче музыки.</p>
+        </div>
+      )}
     </Card>
   );
 }
@@ -87,14 +111,14 @@ export function StudioDesignPanel({
       <fieldset disabled={disabled} className="grid gap-4">
         <div>
           <label htmlFor={`${id}-title`} className={labelClass}>
-            Название серии
+            Название ролика
           </label>
           <input
             id={`${id}-title`}
             className={`${inputClass} mt-1.5`}
             value={design.title}
             maxLength={LIMITS.maxTitleChars}
-            placeholder="На масле. Серия 1"
+            placeholder="Ханука в 770"
             onChange={(e) => onChange({ title: e.target.value })}
           />
         </div>
@@ -141,7 +165,7 @@ export function StudioDesignPanel({
         )}
         <div className="grid gap-1">
           <Toggle checked={design.label} onChange={(label) => onChange({ label })} title="«Сделано с ИИ» в углу кадра">
-            По правилам курса метка нужна в каждой серии.
+            По правилам курса метка нужна в каждом ролике.
           </Toggle>
           <Toggle checked={design.subtitles} onChange={(subtitles) => onChange({ subtitles })} title="Субтитры">
             Из текста реплик, шрифт Onest.

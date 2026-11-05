@@ -242,7 +242,15 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
     if (!url || !kind) return [];
     const who = row.user_id === user.id ? "" : `${authors.get(row.user_id) ?? "группа"} · `;
     const extra = index > 0 ? ` · файл ${index + 1}` : "";
-    return [{ path, url, kind, label: `${who}${jobActionLabels[row.action]} · ${shortDate.format(new Date(row.created_at))}${extra}` }];
+    return [
+      {
+        path,
+        url,
+        kind,
+        label: `${who}${jobActionLabels[row.action]} · ${shortDate.format(new Date(row.created_at))}${extra}`,
+        action: row.action,
+      },
+    ];
   });
 }
 

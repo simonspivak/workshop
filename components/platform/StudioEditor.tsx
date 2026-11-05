@@ -517,7 +517,7 @@ export function StudioEditor({
       <div className="grid gap-6">
         <Card
           title="Сцены"
-          description="Первая — крючок, последняя — клиффхэнгер. К каждой сцене — своя реплика."
+          description="Первая сцена — крючок: по ней решают, смотреть ли дальше. К каждой сцене — своя реплика."
         >
           {scenes.length > 0 && (
             <StudioSceneList
@@ -571,9 +571,11 @@ export function StudioEditor({
         <StudioMusicPanel
           tracks={tracks}
           musicId={project.musicId}
+          level={project.design.musicLevel}
           disabled={locked}
           preview={preview}
           onChange={(musicId) => update((p) => ({ ...p, musicId }))}
+          onLevel={(musicLevel) => setDesign({ musicLevel })}
         />
       </div>
 

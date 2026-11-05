@@ -141,7 +141,7 @@ function SceneCard({
             {item.kind === "image" && <Badge>картинка · 5 с</Badge>}
             {!item.own && <Badge>из группы{item.author ? ` · ${item.author}` : ""}</Badge>}
             {index === 0 && count > 1 && <Badge tone="sun">крючок</Badge>}
-            {index === count - 1 && count > 1 && <Badge tone="sun">клиффхэнгер</Badge>}
+            {index === count - 1 && count > 1 && <Badge tone="sun">финал</Badge>}
           </div>
           {freeze > 0 && (
             <p className="mt-2 text-sm text-ink-soft">

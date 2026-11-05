@@ -4,10 +4,12 @@ import lesson1 from "@/docs/course/lesson-1.json";
 import lesson2 from "@/docs/course/lesson-2.json";
 import lesson3 from "@/docs/course/lesson-3.json";
 import lesson4 from "@/docs/course/lesson-4.json";
+import lesson5 from "@/docs/course/lesson-5.json";
 import {
   LESSON_STEP_HOMEWORK,
   LESSON_STEP_QUIZ,
   LESSON_STEP_THEORY,
+  type LessonStepView,
   type LessonView,
 } from "@/lib/platform/lesson-types";
 import type { QuizKeyItem } from "@/lib/server/quiz";
@@ -21,6 +23,17 @@ import type { QuizKeyItem } from "@/lib/server/quiz";
 */
 
 const text = z.string().trim().min(1);
+
+// Шаг: строка (старый формат) или { text, prompt?, tip? }. Лишние поля отбрасываются.
+// into — в какое ИИ-действие задания вставлять промпт; без него — в чат задания
+const insertTarget = z.enum(["text", "image", "image_edit", "video", "motion", "lipsync", "voice", "music"]);
+const step = z.union([text, z.object({ text, prompt: text.optional(), tip: text.optional(), into: insertTarget.optional() })]);
+
+// Только https: ссылка уходит в href, javascript: и прочие схемы не пропускаем
+const httpsUrl = z
+  .string()
+  .trim()
+  .refine((value) => /^https:\/\/\S+$/.test(value) && URL.canParse(value), { message: "https link expected" });
 
 const lessonSchema = z.object({
   id: z.string().regex(/^lesson-[0-9]{1,2}$/),
@@ -40,7 +53,8 @@ const lessonSchema = z.object({
         id: z.string().regex(/^[a-z0-9-]{1,60}$/),
         title: text,
         mode: z.enum(["solo", "group"]).default("solo"),
-        steps: z.array(text).default([]),
+        intro: text.optional(),
+        steps: z.array(step).default([]),
         promptTemplates: z.array(text).default([]),
         aiActions: z
           .array(
@@ -67,14 +81,28 @@ const lessonSchema = z.object({
         .refine((q) => q.correctIndex < q.options.length, { message: "correctIndex out of range" }),
     )
     .default([]),
-  homework: z.object({ title: text, steps: z.array(text).default([]), deliverable: z.string().optional() }),
+  homework: z.object({
+    title: text,
+    intro: text.optional(),
+    steps: z.array(step).default([]),
+    deliverable: z.string().optional(),
+  }),
+  tools: z
+    .array(z.object({ name: text, url: httpsUrl, what: text, cost: text.optional(), age: text.optional() }))
+    .default([]),
   safety: z.array(text).default([]),
   materials: z.array(text).default([]),
 });
 
 type LessonSource = z.infer<typeof lessonSchema>;
 
-const LESSONS: LessonSource[] = [lesson1, lesson2, lesson3, lesson4]
+function toStep(source: z.infer<typeof step>): LessonStepView {
+  return typeof source === "string"
+    ? { text: source, prompt: null, tip: null, into: null }
+    : { text: source.text, prompt: source.prompt ?? null, tip: source.tip ?? null, into: source.into ?? null };
+}
+
+const LESSONS: LessonSource[] = [lesson1, lesson2, lesson3, lesson4, lesson5]
   .map((raw) => lessonSchema.parse(raw))
   .sort((a, b) => a.order - b.order);
 
@@ -104,7 +132,8 @@ function toView(lesson: LessonSource): LessonView {
       n: i + 1,
       title: task.title,
       mode: task.mode,
-      steps: task.steps,
+      intro: task.intro ?? null,
+      steps: task.steps.map(toStep),
       promptTemplates: task.promptTemplates,
       aiActions: task.aiActions.map((a) => ({ type: a.type, model: a.model, stars: a.stars })),
       doneWhen: task.doneWhen ?? null,
@@ -113,9 +142,11 @@ function toView(lesson: LessonSource): LessonView {
     quiz: lesson.quiz.map((q) => ({ question: q.question, options: q.options })),
     homework: {
       title: lesson.homework.title,
-      steps: lesson.homework.steps,
+      intro: lesson.homework.intro ?? null,
+      steps: lesson.homework.steps.map(toStep),
       deliverable: lesson.homework.deliverable ?? null,
     },
+    tools: lesson.tools.map((t) => ({ name: t.name, url: t.url, what: t.what, cost: t.cost ?? null, age: t.age ?? null })),
     safety: lesson.safety,
   };
 }

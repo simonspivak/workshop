@@ -3,6 +3,7 @@
 import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import { RichText } from "@/components/platform/RichText";
 import { Sparkles } from "lucide-react";
+import { useCopy } from "@/components/platform/CopyButton";
 import { newIdempotencyKey, postGenerate } from "@/components/platform/GenerateClient";
 import { GenerateReferencePicker } from "@/components/platform/GenerateReferencePicker";
 import { Notice, Stars, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
@@ -38,6 +39,16 @@ const PROMPT_LIMITS: Record<GenerateActionOption["action"], number> = {
   voice: 2000,
   music: 1000,
 };
+
+/** Реплика ученика — до 600 символов (сервер: STUDENT_VOICE_MAX_CHARS в lib/server/generate.ts), ведущему — 2000. */
+const STUDENT_VOICE_LIMIT = 600;
+
+function promptLimit(action: GenerateActionOption["action"], staff: boolean): number {
+  return action === "voice" && !staff ? STUDENT_VOICE_LIMIT : PROMPT_LIMITS[action];
+}
+
+/** «Говорящая голова» ученика: сервер принимает только озвучку реплики (lipsync_audio), не музыку. */
+const STUDENT_LIPSYNC_AUDIO_ACTIONS = ["voice"] as const;
 
 export function GeneratePanel({
   option,
@@ -92,6 +103,7 @@ export function GeneratePanel({
       /* игнорируем */
     }
   }
+  const transcript = useCopy();
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   // один ключ на одно намерение: повтор после сбоя сети не спишет второй раз
@@ -102,12 +114,15 @@ export function GeneratePanel({
   const maxImages = action === "image_edit" ? 4 : action === "video" ? (referenceMode ? 4 : 2) : 1;
   const needsImages = action === "image_edit" || action === "motion" || action === "lipsync";
   const driverOptions = staff ? [...library, ...references.filter((r) => r.kind === "video")] : library;
+  const limit = promptLimit(action, staff);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
     setInfo(null);
     if (promptRequired && !prompt.trim()) return setError("invalid_input");
+    // шаблон из задания вставляется программно, maxLength его не обрезает
+    if (action === "voice" && prompt.trim().length > limit) return setError("too_long");
     if (needsImages && images.length === 0) return setError("reference_required");
     if (action === "motion" && driver.length === 0) return setError("reference_required");
     if (action === "lipsync" && voiceTrack.length === 0) return setError("reference_required");
@@ -225,9 +240,18 @@ export function GeneratePanel({
           </ol>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-soft">
             <span>Напишите ответ ниже — ИИ помнит весь разговор. Каждое сообщение — {stars} ★.</span>
-            <button type="button" onClick={() => saveThread([])} className="font-semibold text-violet underline-offset-4 hover:underline">
-              Новый диалог
-            </button>
+            <span className="flex flex-wrap gap-x-4 gap-y-1">
+              <button
+                type="button"
+                onClick={() => transcript.copy(threadAsText(thread))}
+                className="font-semibold text-violet underline-offset-4 hover:underline"
+              >
+                {transcript.copied ? "Скопировано" : "Скопировать переписку"}
+              </button>
+              <button type="button" onClick={() => saveThread([])} className="font-semibold text-violet underline-offset-4 hover:underline">
+                Новый диалог
+              </button>
+            </span>
           </div>
         </div>
       )}
@@ -309,8 +333,9 @@ export function GeneratePanel({
       {action === "lipsync" && (
         <GenerateReferencePicker
           label="Озвучка"
-          hint="Своя реплика из галереи (озвучка)."
+          hint={staff ? "Своя реплика из галереи (озвучка)." : "Своя реплика из галереи. Только озвучка до 15 секунд."}
           kind="audio"
+          actions={staff ? undefined : STUDENT_LIPSYNC_AUDIO_ACTIONS}
           options={references}
           max={1}
           value={voiceTrack}
@@ -321,16 +346,24 @@ export function GeneratePanel({
       )}
 
       <div>
-        <label htmlFor={`${id}-prompt`} className={labelClass}>
-          {PROMPT_LABELS[action]}
-        </label>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <label htmlFor={`${id}-prompt`} className={labelClass}>
+            {PROMPT_LABELS[action]}
+          </label>
+          {action === "voice" && (
+            <span id={`${id}-prompt-count`} className={`font-mono text-xs ${prompt.length > limit ? "text-coral-deep" : "text-ink-soft"}`}>
+              {prompt.length} / {limit}
+            </span>
+          )}
+        </div>
         <textarea
           id={`${id}-prompt`}
           ref={promptRef}
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           required={promptRequired}
-          maxLength={PROMPT_LIMITS[action]}
+          maxLength={limit}
+          aria-describedby={action === "voice" ? `${id}-prompt-count` : undefined}
           rows={action === "text" ? 6 : 5}
           placeholder="Вставьте шаблон из задания и допишите своё"
           className={`${inputClass} mt-2 font-normal`}
@@ -480,6 +513,12 @@ function ModeChoice({
 }
 
 type ThreadTurn = { role: "user" | "assistant"; text: string };
+
+/** Переписка простым текстом для сдачи: «Промпт 1: … Ответ ИИ: … Промпт 2: …». */
+function threadAsText(thread: readonly ThreadTurn[]): string {
+  let n = 0;
+  return thread.map((turn) => (turn.role === "user" ? `Промпт ${++n}:\n${turn.text}` : `Ответ ИИ:\n${turn.text}`)).join("\n\n");
+}
 
 function readThread(key: string | null): ThreadTurn[] {
   if (!key || typeof window === "undefined") return [];

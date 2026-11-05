@@ -163,7 +163,9 @@ export type TaskStatusResult =
   | GatewayFailure;
 export type BalanceResult = { ok: true; credits: number | null } | GatewayFailure;
 
-const TIMEOUT_MS = { text: 60_000, create: 30_000, status: 15_000, balance: 10_000 };
+// Шлюз ждёт kie не дольше 40 с (POST) и 12 с (GET): платформа ждёт дольше, чтобы не вернуть
+// звёзды за задачу, которую kie всё-таки создал. Функция живёт до 60 с (maxDuration).
+const TIMEOUT_MS = { text: 50_000, create: 45_000, status: 15_000, balance: 10_000 };
 
 // ---------- публичное API ----------
 

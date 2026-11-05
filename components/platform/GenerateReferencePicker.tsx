@@ -4,16 +4,19 @@ import { useId, useState } from "react";
 import { Check, Link2, Music, X } from "lucide-react";
 import { useReferenceTray } from "@/components/platform/GenerateClient";
 import { buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
-import type { MediaKind, MediaOption } from "@/lib/platform/generation-types";
+import type { JobAction, MediaKind, MediaOption } from "@/lib/platform/generation-types";
 
 /**
  * Выбор файлов из своей галереи (и библиотеки курса) для референсов.
  * Сначала — отмеченные в галерее кнопкой «Как референс». Ведущий может вставить https-ссылку.
+ * actions — показывать только файлы этих задач (например, озвучку без музыки); файлы без
+ * известной задачи (библиотека курса, старые отметки в галерее) тогда не показываются.
  */
 export function GenerateReferencePicker({
   label,
   hint,
   kind,
+  actions,
   options,
   max,
   value,
@@ -24,6 +27,7 @@ export function GenerateReferencePicker({
   label: string;
   hint?: string;
   kind: MediaKind;
+  actions?: readonly JobAction[];
   options: MediaOption[];
   max: number;
   value: string[];
@@ -35,11 +39,16 @@ export function GenerateReferencePicker({
   const tray = useReferenceTray();
   const [url, setUrl] = useState("");
 
-  const ofKind = options.filter((o) => o.kind === kind);
+  const allowed = (o: { action?: JobAction }) => !actions || (o.action !== undefined && actions.includes(o.action));
+  const ofKind = options.filter((o) => o.kind === kind && allowed(o));
   const known = new Set(ofKind.map((o) => o.path));
   const fromTray: MediaOption[] = tray.items
     .filter((item) => item.kind === kind)
-    .map((item) => ofKind.find((o) => o.path === item.path) ?? { path: item.path, url: "", kind: item.kind, label: item.label });
+    .map(
+      (item) =>
+        ofKind.find((o) => o.path === item.path) ?? { path: item.path, url: "", kind: item.kind, label: item.label, action: item.action },
+    )
+    .filter(allowed);
   const trayPaths = new Set(fromTray.map((o) => o.path));
   const extraUrls = value.filter((v) => v.startsWith("https://")).map((v) => ({ path: v, url: "", kind, label: "Ссылка" }));
   const tiles: MediaOption[] = [...extraUrls, ...fromTray, ...ofKind.filter((o) => !trayPaths.has(o.path))];
@@ -119,10 +128,10 @@ export function GenerateReferencePicker({
           </button>
         </div>
       )}
-      {tray.items.some((i) => i.kind === kind) && (
+      {fromTray.length > 0 && (
         <button
           type="button"
-          onClick={() => tray.items.filter((i) => i.kind === kind).forEach((i) => tray.remove(i.path))}
+          onClick={() => fromTray.forEach((o) => tray.remove(o.path))}
           className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-ink-soft hover:text-violet"
         >
           <X aria-hidden="true" className="size-3" /> Очистить отмеченные в галерее
