@@ -4,6 +4,7 @@ import lesson1 from "@/docs/course/lesson-1.json";
 import lesson2 from "@/docs/course/lesson-2.json";
 import lesson3 from "@/docs/course/lesson-3.json";
 import lesson4 from "@/docs/course/lesson-4.json";
+import lesson5 from "@/docs/course/lesson-5.json";
 import {
   LESSON_STEP_HOMEWORK,
   LESSON_STEP_QUIZ,
@@ -99,7 +100,7 @@ function toStep(source: z.infer<typeof step>): LessonStepView {
     : { text: source.text, prompt: source.prompt ?? null, tip: source.tip ?? null };
 }
 
-const LESSONS: LessonSource[] = [lesson1, lesson2, lesson3, lesson4]
+const LESSONS: LessonSource[] = [lesson1, lesson2, lesson3, lesson4, lesson5]
   .map((raw) => lessonSchema.parse(raw))
   .sort((a, b) => a.order - b.order);
 
