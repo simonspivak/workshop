@@ -173,26 +173,74 @@ export function isMockMode(): boolean {
   return gatewayConfig().mode === "mock";
 }
 
-/** Синхронный текст (Claude Haiku по умолчанию). */
+/*
+  kie иногда перегружен: отвечает 502/503/429 «Resources are tight, please try again later».
+  Такой отказ приходит быстро и задачу не создаёт, поэтому повторяем сами: два раза с паузой,
+  а для текста Haiku последней попыткой берём запасную модель другого поставщика (GPT, проверена).
+  Таймаут и «неизвестно, создана ли задача» не повторяем: время кончилось или kie мог списать.
+*/
+const RETRY_DELAYS_MS = [1500, 3000];
+/** Вся попытка с повторами укладывается в функцию (maxDuration 60 с) с запасом на базу. */
+const RETRY_BUDGET_MS = { text: 50_000, create: 45_000 };
+const TEXT_FALLBACK_MODEL: ModelFor<"text"> = "gpt-6-luna";
+
+/** Временный отказ kie или шлюза: можно повторить. */
+export function isTransientFailure(result: GatewayFailure): boolean {
+  if (result.uncertain || result.error === "gateway_timeout") return false;
+  if (result.error === "gateway_unreachable") return true;
+  const status = result.httpStatus ?? 0;
+  if (status === 429 || status >= 500) return true;
+  return /resources are tight|try again later|overload|capacity|too many requests|busy/i.test(result.error);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Повторы: attempt(i, timeoutMs) вызывается, пока ответ временный и хватает времени. */
+async function withRetries<T extends { ok: true } | GatewayFailure>(
+  budgetMs: number,
+  attempts: number,
+  attempt: (index: number, timeoutMs: number) => Promise<T>,
+): Promise<T> {
+  const started = Date.now();
+  let result = await attempt(0, budgetMs);
+  for (let i = 1; i < attempts; i++) {
+    if (result.ok || !isTransientFailure(result)) return result;
+    const delay = RETRY_DELAYS_MS[i - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+    const left = budgetMs - (Date.now() - started) - delay;
+    if (left < 10_000) return result;
+    await sleep(delay);
+    result = await attempt(i, left);
+  }
+  return result;
+}
+
+/** Синхронный текст (Claude Haiku по умолчанию). При перегрузке kie — повторы и запасная модель. */
 export async function generateText(request: Omit<TextRequest, "action">): Promise<TextResult> {
   const config = gatewayConfig();
   if (config.mode === "mock") return mockText(request);
-  const res = await post(config, { action: "text", ...request }, TIMEOUT_MS.text, false);
-  if (!res.ok) return res;
-  const body = res.body;
-  if (body.ok !== true || typeof body.text !== "string") return failure(body, res.status);
-  return { ok: true, text: body.text, model: str(body.model), credits: num(body.credits) };
+  const primary = request.model ?? GATEWAY_MODELS.text[0];
+  const models: ModelFor<"text">[] =
+    primary === "claude-haiku-5-5" ? [primary, primary, TEXT_FALLBACK_MODEL] : [primary, primary, primary];
+  return withRetries<TextResult>(RETRY_BUDGET_MS.text, models.length, async (i, timeoutMs) => {
+    const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs), false);
+    if (!res.ok) return res;
+    const body = res.body;
+    if (body.ok !== true || typeof body.text !== "string") return failure(body, res.status);
+    return { ok: true, text: body.text, model: str(body.model) ?? models[i], credits: num(body.credits) };
+  });
 }
 
 /** Создать задачу (картинка, видео, движение, говорящая голова, озвучка, музыка). */
 export async function createTask(request: TaskRequest): Promise<CreateTaskResult> {
   const config = gatewayConfig();
   if (config.mode === "mock") return mockCreate(request);
-  const res = await post(config, request as unknown as Record<string, unknown>, TIMEOUT_MS.create, true);
-  if (!res.ok) return res;
-  const body = res.body;
-  if (body.ok !== true || typeof body.taskId !== "string" || !body.taskId) return failure(body, res.status);
-  return { ok: true, taskId: body.taskId, model: str(body.model), state: str(body.state) ?? "queued" };
+  return withRetries<CreateTaskResult>(RETRY_BUDGET_MS.create, 3, async (_i, timeoutMs) => {
+    const res = await post(config, request as unknown as Record<string, unknown>, Math.min(TIMEOUT_MS.create, timeoutMs), true);
+    if (!res.ok) return res;
+    const body = res.body;
+    if (body.ok !== true || typeof body.taskId !== "string" || !body.taskId) return failure(body, res.status);
+    return { ok: true, taskId: body.taskId, model: str(body.model), state: str(body.state) ?? "queued" };
+  });
 }
 
 /** Статус задачи. done = true при state success или fail. */
