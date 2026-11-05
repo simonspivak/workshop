@@ -1,7 +1,7 @@
 // Урок в том виде, в каком он уходит в браузер. Без правильных ответов и объяснений теста:
 // их отдаёт только Server Action submitQuiz после отправки.
 
-import type { JobAction } from "@/lib/platform/generation-types";
+import type { GenerateAction, JobAction } from "@/lib/platform/generation-types";
 
 export type LessonAiAction = { type: JobAction; model: string; stars: number };
 
@@ -9,7 +9,8 @@ export type LessonAiAction = { type: JobAction; model: string; stars: number };
  * Шаг задания или домашки. В JSON шаг — строка или { text, prompt?, tip? }; сюда приходит
  * всегда объект. prompt показывается рамкой «Промпт N» (N — по порядку в задании), tip — заметкой.
  */
-export type LessonStepView = { text: string; prompt: string | null; tip: string | null };
+/** Шаг задания. into — в какое ИИ-действие задания вставлять промпт (по умолчанию в чат). */
+export type LessonStepView = { text: string; prompt: string | null; tip: string | null; into: GenerateAction | null };
 
 /** Инструмент урока: внешний сервис, которым можно пользоваться и после курса. */
 export type LessonToolView = { name: string; url: string; what: string; cost: string | null; age: string | null };

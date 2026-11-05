@@ -32,7 +32,11 @@ const LIMITS = {
   explanation: 320,
 };
 
-const BANNED = [/библи/i];
+// «Библия» нельзя (еврейский проект); «библиотека» можно
+const BANNED = [/библи(?!отек)/i];
+
+// Куда кнопка «Вставить в …» кладёт промпт шага (по умолчанию — в чат задания)
+const INTO = ["text", "image", "image_edit", "video", "motion", "lipsync", "voice", "music"];
 
 const dir = "docs/course";
 const files = process.argv.slice(2).length
@@ -65,11 +69,16 @@ for (const file of files) {
   };
   const optStr = (v, path, max) => v === undefined || str(v, path, max);
 
-  const step = (s, path) => {
+  const step = (s, path, actions = null) => {
     if (typeof s === "string") return str(s, path, LIMITS.stepText);
     if (!s || typeof s !== "object") return err(`${path}: строка или {text, prompt?, tip?}`);
-    const extra = Object.keys(s).filter((k) => !["text", "prompt", "tip"].includes(k));
+    const extra = Object.keys(s).filter((k) => !["text", "prompt", "tip", "into"].includes(k));
     if (extra.length) err(`${path}: лишние поля ${extra.join(", ")}`);
+    if (s.into !== undefined) {
+      if (!INTO.includes(s.into)) err(`${path}.into: одно из ${INTO.join(", ")}`);
+      if (!s.prompt) err(`${path}.into: только у шага с промптом`);
+      if (actions && !actions.has(s.into)) err(`${path}.into: в задании нет ИИ-действия ${s.into}`);
+    }
     str(s.text, `${path}.text`, LIMITS.stepText);
     optStr(s.prompt, `${path}.prompt`, LIMITS.prompt);
     optStr(s.tip, `${path}.tip`, LIMITS.tip);
@@ -126,7 +135,8 @@ for (const file of files) {
     optStr(t.intro, `${p}.intro`, LIMITS.intro);
     if (!t.steps?.length) err(`${p}.steps: нужны шаги`);
     if ((t.steps ?? []).length > 10) err(`${p}.steps: больше 10 шагов — разбей задание`);
-    (t.steps ?? []).forEach((s, j) => step(s, `${p}.steps[${j}]`));
+    const actions = new Set((t.aiActions ?? []).map((a) => a.type));
+    (t.steps ?? []).forEach((s, j) => step(s, `${p}.steps[${j}]`, actions));
     if (!Array.isArray(t.promptTemplates)) err(`${p}.promptTemplates: массив (можно пустой)`);
     (t.promptTemplates ?? []).forEach((s, j) => str(s, `${p}.promptTemplates[${j}]`, LIMITS.prompt));
     (t.aiActions ?? []).forEach((a, j) => {

@@ -25,7 +25,9 @@ import type { QuizKeyItem } from "@/lib/server/quiz";
 const text = z.string().trim().min(1);
 
 // Шаг: строка (старый формат) или { text, prompt?, tip? }. Лишние поля отбрасываются.
-const step = z.union([text, z.object({ text, prompt: text.optional(), tip: text.optional() })]);
+// into — в какое ИИ-действие задания вставлять промпт; без него — в чат задания
+const insertTarget = z.enum(["text", "image", "image_edit", "video", "motion", "lipsync", "voice", "music"]);
+const step = z.union([text, z.object({ text, prompt: text.optional(), tip: text.optional(), into: insertTarget.optional() })]);
 
 // Только https: ссылка уходит в href, javascript: и прочие схемы не пропускаем
 const httpsUrl = z
@@ -96,8 +98,8 @@ type LessonSource = z.infer<typeof lessonSchema>;
 
 function toStep(source: z.infer<typeof step>): LessonStepView {
   return typeof source === "string"
-    ? { text: source, prompt: null, tip: null }
-    : { text: source.text, prompt: source.prompt ?? null, tip: source.tip ?? null };
+    ? { text: source, prompt: null, tip: null, into: null }
+    : { text: source.text, prompt: source.prompt ?? null, tip: source.tip ?? null, into: source.into ?? null };
 }
 
 const LESSONS: LessonSource[] = [lesson1, lesson2, lesson3, lesson4, lesson5]

@@ -10,7 +10,7 @@ import { GeneratePanel } from "@/components/platform/GeneratePanel";
 import { LessonSteps } from "@/components/platform/LessonSteps";
 import { Stars, buttonClass } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
-import { jobActionLabels, type GenerateActionOption, type JobView, type MediaOption } from "@/lib/platform/generation-types";
+import { jobActionLabels, type GenerateAction, type GenerateActionOption, type JobView, type MediaOption } from "@/lib/platform/generation-types";
 import type { LessonStepView } from "@/lib/platform/lesson-types";
 
 /**
@@ -53,8 +53,6 @@ export function LessonTaskTools({
 
   const selected = options.find((o) => o.key === selectedKey) ?? null;
   const firstAvailable = options.find((o) => o.available) ?? null;
-  // чат задания: первая текстовая кнопка («Ответ ИИ» или «Длинный ответ»)
-  const chat = options.find((o) => o.action === "text") ?? null;
 
   // Текст в поле запроса: выбрать действие, дописать или заменить текст, прокрутить к полю.
   // Переписку не трогаем: она живёт в GeneratePanel и в localStorage.
@@ -65,11 +63,18 @@ export function LessonTaskTools({
   };
   // шаблон — в выбранное действие (или первое доступное), дописывается к запросу
   const insertTemplate = (template: string) => insertText(template, { option: selected ?? firstAvailable, replace: false });
-  // промпт из шага — в чат задания, заменяет текст запроса. Если уже открыт другой текстовый чат
-  // (в старых уроках их бывает два), остаёмся в нём: его переписка не должна пропасть с экрана.
-  const insertPrompt = chat?.available
-    ? (text: string) => insertText(text, { option: selected?.action === "text" ? selected : chat, replace: true })
-    : undefined;
+  // Промпт из шага — в действие из step.into (по умолчанию в чат задания), заменяет текст запроса.
+  // Если уже открыто действие того же типа (в старых уроках бывает два чата), остаёмся в нём:
+  // его переписка не должна пропасть с экрана.
+  const targetFor = (into: GenerateAction) =>
+    selected?.action === into && selected.available
+      ? selected
+      : (options.find((o) => o.action === into && o.available) ?? null);
+  const canInsert = (into: GenerateAction) => targetFor(into) !== null;
+  const insertPrompt = (text: string, into: GenerateAction) => {
+    const option = targetFor(into);
+    if (option) insertText(text, { option, replace: true });
+  };
 
   // после рендера: форма могла только что появиться (выбрано действие), поэтому фокус — в эффекте
   useEffect(() => {
@@ -92,7 +97,7 @@ export function LessonTaskTools({
 
   return (
     <div className="space-y-5">
-      {steps.length > 0 && <LessonSteps steps={steps} onInsert={insertPrompt} />}
+      {steps.length > 0 && <LessonSteps steps={steps} onInsert={insertPrompt} canInsert={canInsert} />}
 
       {doneWhen && (
         <p className="rounded-2xl bg-sun/30 px-4 py-3 text-sm leading-relaxed">
