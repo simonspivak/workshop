@@ -176,10 +176,11 @@ export function isMockMode(): boolean {
 /*
   kie иногда перегружен: отвечает 502/503/429 «Resources are tight, please try again later».
   Такой отказ приходит быстро и задачу не создаёт, поэтому повторяем сами: два раза с паузой,
-  а для текста Haiku последней попыткой берём запасную модель другого поставщика (GPT, проверена).
+  а для текста Haiku чередуем с запасной моделью другого поставщика (GPT, проверена).
   Таймаут и «неизвестно, создана ли задача» не повторяем: время кончилось или kie мог списать.
 */
-const RETRY_DELAYS_MS = [1500, 3000];
+// Окна перегрузки kie длятся минутами, но часть запросов проходит: 5 попыток за ~30 с
+const RETRY_DELAYS_MS = [1500, 3000, 5000, 8000];
 /** Вся попытка с повторами укладывается в функцию (maxDuration 60 с) с запасом на базу. */
 const RETRY_BUDGET_MS = { text: 50_000, create: 45_000 };
 const TEXT_FALLBACK_MODEL: ModelFor<"text"> = "gpt-6-luna";
@@ -220,7 +221,9 @@ export async function generateText(request: Omit<TextRequest, "action">): Promis
   if (config.mode === "mock") return mockText(request);
   const primary = request.model ?? GATEWAY_MODELS.text[0];
   const models: ModelFor<"text">[] =
-    primary === "claude-haiku-5-5" ? [primary, primary, TEXT_FALLBACK_MODEL] : [primary, primary, primary];
+    primary === "claude-haiku-5-5"
+      ? [primary, primary, TEXT_FALLBACK_MODEL, primary, TEXT_FALLBACK_MODEL]
+      : [primary, primary, primary, primary, primary];
   return withRetries<TextResult>(RETRY_BUDGET_MS.text, models.length, async (i, timeoutMs) => {
     const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs), false);
     if (!res.ok) return res;
@@ -234,7 +237,7 @@ export async function generateText(request: Omit<TextRequest, "action">): Promis
 export async function createTask(request: TaskRequest): Promise<CreateTaskResult> {
   const config = gatewayConfig();
   if (config.mode === "mock") return mockCreate(request);
-  return withRetries<CreateTaskResult>(RETRY_BUDGET_MS.create, 3, async (_i, timeoutMs) => {
+  return withRetries<CreateTaskResult>(RETRY_BUDGET_MS.create, 4, async (_i, timeoutMs) => {
     const res = await post(config, request as unknown as Record<string, unknown>, Math.min(TIMEOUT_MS.create, timeoutMs), true);
     if (!res.ok) return res;
     const body = res.body;
