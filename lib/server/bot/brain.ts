@@ -4,7 +4,7 @@ import { guardReply, guardText, guestBlockedText, hasPersonalData } from "@/lib/
 import { extractServiceLines, readCardScene, validateLead, type LeadData } from "@/lib/server/bot/leads";
 import { BOT_LIMITS } from "@/lib/server/bot/limits";
 import { buildConversationPrompt, buildSystemPrompt, leaksInstructions, sanitizeGuestText } from "@/lib/server/bot/prompt";
-import { rateLimitDecision } from "@/lib/server/bot/ratelimit";
+import { rateLimitDecision, type RateLimitHit } from "@/lib/server/bot/ratelimit";
 import { PREVIEW_PREFIX } from "@/lib/server/bot/secrets";
 import {
   HIDDEN_MESSAGE,
@@ -130,11 +130,17 @@ export async function acceptMessage(input: BrainInput): Promise<{ status: "accep
     return { status: "blocked", text: guestBlockedText(guard.reason) };
   }
 
+  const limited = (hit: RateLimitHit): BrainResult => ({
+    status: "limited",
+    text: hit === "sender_hour" ? BOT_TEXTS.limitedSender : BOT_TEXTS.limitedBot,
+  });
+
+  // Быстрая проверка без блокировок; окончательная — при записи (insert_bot_message)
   if (!input.preview) {
     const hit = rateLimitDecision(
       await countRecent({ botId: bot.id, senderHash: input.senderHash, previewPrefix: PREVIEW_PREFIX }),
     );
-    if (hit) return { status: "limited", text: hit === "sender_hour" ? BOT_TEXTS.limitedSender : BOT_TEXTS.limitedBot };
+    if (hit) return limited(hit);
   }
 
   // Повтор того же сообщения из браузера (двойной клик, повтор запроса): уже списано — не отвечаем второй раз
@@ -142,6 +148,8 @@ export async function acceptMessage(input: BrainInput): Promise<{ status: "accep
     return { status: "duplicate", text: "" };
   }
 
+  // Лимиты и запись — одной транзакцией: параллельные запросы не проходят лимит все сразу,
+  // а одно и то же сообщение (chargeKey) записывается и доходит до модели только один раз
   const stored = await insertMessage({
     botId: bot.id,
     channel: input.channel,
@@ -150,8 +158,11 @@ export async function acceptMessage(input: BrainInput): Promise<{ status: "accep
     content: text,
     senderHash: input.senderHash,
     telegramUpdateId: input.telegramUpdateId ?? null,
+    dedupeKey: input.chargeKey,
+    limits: input.preview ? null : { senderPerHour: BOT_LIMITS.senderPerHour, botPerDay: BOT_LIMITS.botPerDay },
   });
   if (stored === "duplicate") return { status: "duplicate", text: "" };
+  if (stored === "sender_hour" || stored === "bot_day") return limited(stored);
   return { status: "accepted", messageId: stored.id };
 }
 

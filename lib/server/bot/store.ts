@@ -177,8 +177,9 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const since = (ms: number) => new Date(Date.now() - ms).toISOString();
 
-/** Сохранить сообщение. 'duplicate' — Telegram повторил то же update_id. */
-export async function insertMessage(row: {
+export type InsertMessageResult = { id: number } | "duplicate" | "sender_hour" | "bot_day";
+
+export type MessageRow = {
   botId: string;
   channel: BotChannel;
   conversationId: string;
@@ -187,7 +188,41 @@ export async function insertMessage(row: {
   senderHash?: string | null;
   telegramUpdateId?: number | null;
   stars?: number;
-}): Promise<{ id: number } | "duplicate"> {
+  /** ключ входящего сообщения (bot:<бот>:<id> или tg:<бот>:<update_id>): повтор не записывается */
+  dedupeKey?: string | null;
+  /** лимиты гостя: проверяются и пишутся одной транзакцией (insert_bot_message) */
+  limits?: { senderPerHour: number; botPerDay: number } | null;
+};
+
+/**
+ * Сохранить сообщение. 'duplicate' — повтор того же сообщения (update_id Telegram или dedupeKey);
+ * 'sender_hour' / 'bot_day' — сообщение гостя сверх лимита, оно не записано.
+ * Лимиты и запись — одна SQL-функция под блокировкой: параллельные запросы не проходят лимит все сразу.
+ */
+export async function insertMessage(row: MessageRow): Promise<InsertMessageResult> {
+  const { data, error } = await createAdminClient().rpc("insert_bot_message", {
+    p_bot: row.botId,
+    p_channel: row.channel,
+    p_conversation_id: row.conversationId,
+    p_role: row.role,
+    p_content: row.content.slice(0, 4000),
+    p_ip_hash: row.senderHash ?? null,
+    p_telegram_update_id: row.telegramUpdateId ?? null,
+    p_stars: row.stars ?? 0,
+    p_dedupe_key: row.dedupeKey ?? null,
+    p_sender_per_hour: row.limits && row.senderHash ? row.limits.senderPerHour : null,
+    p_bot_per_day: row.limits ? row.limits.botPerDay : null,
+  });
+  // Код вышел раньше миграции 20261105100000 (функции ещё нет): пишем по-старому
+  if (error && (error.code === "PGRST202" || error.code === "42883")) return insertMessageDirect(row);
+  const result = data?.[0];
+  if (error || !result) throw new Error(`bot.store.insertMessage failed (${error?.code})`);
+  if (result.outcome === "accepted" && result.message_id != null) return { id: result.message_id };
+  if (result.outcome === "duplicate" || result.outcome === "sender_hour" || result.outcome === "bot_day") return result.outcome;
+  throw new Error("bot.store.insertMessage: unexpected result");
+}
+
+async function insertMessageDirect(row: MessageRow): Promise<{ id: number } | "duplicate"> {
   const { data, error } = await createAdminClient()
     .from("bot_messages")
     .insert({
