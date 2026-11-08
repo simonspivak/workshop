@@ -176,8 +176,8 @@ Full-body shot of one adult man in a plain blue hoodie walking confidently towar
 
 - [x] Исследование лимитов Supabase, Vercel, kie, n8n — `docs/platform/audit/2026-11-08-research.md`.
 - [x] 6 аудитов кода (вход, база, генерации, боты, кабинет учителя, безопасность) — 65 находок, `docs/platform/audit/2026-11-08-findings.md` (сырые, не перепроверены).
-- [ ] 9 ноября: проверка 65 находок скептиками (workflow `production-readiness-audit`, resume от run `wf_9ef9c4c7-a09` — этапы Research и Audit в кэше).
-- [ ] 9 ноября: итоговый отчёт `docs/platform/audit-2026-11-08.md` по-русски.
+- [x] 9 ноября: проверка 65 находок скептиками — 64 подтверждены, 1 отклонена (BP-3). `docs/platform/audit/2026-11-09-verified.md` (вердикты и уточнённые планы исправлений), `2026-11-09-verdicts.json`.
+- [~] Итоговый отчёт `docs/platform/audit-2026-11-08.md` по-русски — агент-синтезатор ещё не отработал (лимит использования); возобновить: Workflow resume run `wf_9ef9c4c7-a09`, всё кроме отчёта в кэше.
 - [ ] Исправления по приоритету: сначала то, что ломает понедельник (лимиты входа и ботов за одним Wi-Fi, лимит n8n, повторы при постоянных ошибках kie).
 
 ## Решения, которые ждут Сеню
