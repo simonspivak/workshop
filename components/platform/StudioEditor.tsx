@@ -47,7 +47,7 @@ import type {
 import { Card, Notice, Skeleton, buttonClass } from "@/components/platform/ui";
 import { StudioDesignPanel, StudioMusicPanel, StudioRenderPanel, type RenderState, type SaveState } from "@/components/platform/StudioPanels";
 import { StudioPicker, StudioSceneList } from "@/components/platform/StudioScenes";
-import { useAudioPreview } from "@/components/platform/StudioThumb";
+import { useAudioPreview } from "@/components/platform/AudioPreview";
 
 /*
   Студия автомонтажа (урок 2). Сцены из галереи по порядку, к каждой — реплика и субтитр,

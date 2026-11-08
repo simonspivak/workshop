@@ -1,12 +1,21 @@
 "use client";
 
-import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import { RichText } from "@/components/platform/RichText";
 import { Sparkles } from "lucide-react";
 import { useCopy } from "@/components/platform/CopyButton";
-import { newIdempotencyKey, postGenerate } from "@/components/platform/GenerateClient";
+import { newIdempotencyKey, postGenerate, useReferenceTray } from "@/components/platform/GenerateClient";
 import { GenerateReferencePicker } from "@/components/platform/GenerateReferencePicker";
 import { Notice, Stars, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
+import {
+  LYRICS_MAX,
+  STYLE_MAX,
+  TITLE_MAX,
+  formDraftKey,
+  readFormDraft,
+  writeFormDraft,
+  type GenerateFormDraft,
+} from "@/lib/platform/form-draft";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import {
   ASPECT_RATIOS,
@@ -75,19 +84,28 @@ export function GeneratePanel({
 }) {
   const id = useId();
   const action = option.action;
-  const [model, setModel] = useState(option.model);
-  const [aspect, setAspect] = useState<AspectRatio>("9:16");
-  const [images, setImages] = useState<string[]>([]);
-  const [driver, setDriver] = useState<string[]>([]);
-  const [voiceTrack, setVoiceTrack] = useState<string[]>([]);
-  const [referenceMode, setReferenceMode] = useState(false);
-  const [duration, setDuration] = useState(5);
-  const [sound, setSound] = useState(false);
-  const [voice, setVoice] = useState<VoiceId>("Kore");
-  const [style, setStyle] = useState("");
-  const [instrumental, setInstrumental] = useState(false);
-  const [lyrics, setLyrics] = useState("");
-  const [title, setTitle] = useState("");
+  const tray = useReferenceTray();
+  const driverOptions = staff ? [...library, ...references.filter((r) => r.kind === "video")] : library;
+  // Настройки формы (голос, манера, формат, выбранные файлы…) живут в sessionStorage по ключу
+  // урок:задание:действие: переключение на соседнюю кнопку (скопировать промпт) и обратно
+  // монтирует панель заново, а форма остаётся. Панель монтируется только в браузере — читаем сразу.
+  const draftKey = formDraftKey(lessonId, taskId, option.key);
+  const [draft, setDraft] = useState<GenerateFormDraft>(() =>
+    readFormDraft(draftKey, {
+      models: staff ? option.models.map((m) => m.model) : [option.model],
+      defaultModel: option.model,
+      longVideo: action === "video" && option.longStars !== null,
+      imagePaths: [...references.filter((r) => r.kind === "image"), ...tray.items.filter((t) => t.kind === "image")].map((r) => r.path),
+      videoPaths: [...driverOptions, ...(staff ? tray.items.filter((t) => t.kind === "video") : [])].map((r) => r.path),
+      audioPaths: [...references.filter((r) => r.kind === "audio"), ...tray.items.filter((t) => t.kind === "audio")].map((r) => r.path),
+      maxImages: (referenceMode) => (action === "image_edit" ? 4 : action === "video" ? (referenceMode ? 4 : 2) : 1),
+    }),
+  );
+  useEffect(() => {
+    writeFormDraft(draftKey, draft);
+  }, [draftKey, draft]);
+  const { model, aspect, images, driver, voiceTrack, referenceMode, duration, sound, voice, style, instrumental, lyrics, title } = draft;
+  const patch = (next: Partial<GenerateFormDraft>) => setDraft((current) => ({ ...current, ...next }));
   const [pending, setPending] = useState(false);
   // Переписка текстового задания: хранится в браузере, уходит в запрос как история
   const threadKey = action === "text" ? `iis-thread:${lessonId ?? "-"}:${taskId ?? "-"}:${option.key}` : null;
@@ -113,7 +131,6 @@ export function GeneratePanel({
   const promptRequired = action !== "motion" && action !== "lipsync";
   const maxImages = action === "image_edit" ? 4 : action === "video" ? (referenceMode ? 4 : 2) : 1;
   const needsImages = action === "image_edit" || action === "motion" || action === "lipsync";
-  const driverOptions = staff ? [...library, ...references.filter((r) => r.kind === "video")] : library;
   const limit = promptLimit(action, staff);
 
   async function submit(event: FormEvent) {
@@ -260,7 +277,7 @@ export function GeneratePanel({
           <label htmlFor={`${id}-model`} className={labelClass}>
             Модель (демо ведущего, без звёзд)
           </label>
-          <select id={`${id}-model`} value={model} onChange={(e) => setModel(e.target.value)} className={`${inputClass} mt-2`}>
+          <select id={`${id}-model`} value={model} onChange={(e) => patch({ model: e.target.value })} className={`${inputClass} mt-2`}>
             {option.models.map((m) => (
               <option key={m.model} value={m.model}>
                 {m.label}
@@ -279,17 +296,14 @@ export function GeneratePanel({
                 <ModeChoice
                   name={`${id}-mode`}
                   checked={!referenceMode}
-                  onChange={() => {
-                    setReferenceMode(false);
-                    setImages((v) => v.slice(0, 2));
-                  }}
+                  onChange={() => patch({ referenceMode: false, images: images.slice(0, 2) })}
                   title="Из кадра"
                   text="Картинка станет первым кадром (вторая — последним)."
                 />
                 <ModeChoice
                   name={`${id}-mode`}
                   checked={referenceMode}
-                  onChange={() => setReferenceMode(true)}
+                  onChange={() => patch({ referenceMode: true })}
                   title="По листу персонажа"
                   text="Картинки — референсы: герой в новой сцене."
                 />
@@ -309,7 +323,7 @@ export function GeneratePanel({
             options={references}
             max={maxImages}
             value={images}
-            onChange={setImages}
+            onChange={(paths) => patch({ images: paths })}
             allowUrl={staff}
             emptyText="Картинок в галерее пока нет. Сначала сгенерируйте кадр или лист персонажа."
           />
@@ -324,7 +338,7 @@ export function GeneratePanel({
           options={driverOptions}
           max={1}
           value={driver}
-          onChange={setDriver}
+          onChange={(paths) => patch({ driver: paths })}
           allowUrl={staff}
           emptyText="Библиотека движений пока пуста."
         />
@@ -339,7 +353,7 @@ export function GeneratePanel({
           options={references}
           max={1}
           value={voiceTrack}
-          onChange={setVoiceTrack}
+          onChange={(paths) => patch({ voiceTrack: paths })}
           allowUrl={staff}
           emptyText="Озвучек в галерее пока нет. Сначала озвучьте реплику."
         />
@@ -377,7 +391,7 @@ export function GeneratePanel({
             <label htmlFor={`${id}-voice`} className={labelClass}>
               Голос
             </label>
-            <select id={`${id}-voice`} value={voice} onChange={(e) => setVoice(e.target.value as VoiceId)} className={`${inputClass} mt-2`}>
+            <select id={`${id}-voice`} value={voice} onChange={(e) => patch({ voice: e.target.value as VoiceId })} className={`${inputClass} mt-2`}>
               {VOICE_OPTIONS.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
@@ -392,8 +406,8 @@ export function GeneratePanel({
             <input
               id={`${id}-style`}
               value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              maxLength={300}
+              onChange={(e) => patch({ style: e.target.value })}
+              maxLength={STYLE_MAX}
               placeholder="Например: с иронией, быстро, шёпотом"
               className={`${inputClass} mt-2`}
             />
@@ -404,7 +418,7 @@ export function GeneratePanel({
       {action === "music" && (
         <div className="space-y-4">
           <label className="flex items-start gap-3">
-            <input type="checkbox" checked={instrumental} onChange={(e) => setInstrumental(e.target.checked)} className="mt-1 size-5 accent-violet" />
+            <input type="checkbox" checked={instrumental} onChange={(e) => patch({ instrumental: e.target.checked })} className="mt-1 size-5 accent-violet" />
             <span>Без вокала (только музыка)</span>
           </label>
           {!instrumental && (
@@ -415,8 +429,8 @@ export function GeneratePanel({
               <textarea
                 id={`${id}-lyrics`}
                 value={lyrics}
-                onChange={(e) => setLyrics(e.target.value)}
-                maxLength={3000}
+                onChange={(e) => patch({ lyrics: e.target.value })}
+                maxLength={LYRICS_MAX}
                 rows={4}
                 className={`${inputClass} mt-2`}
               />
@@ -426,7 +440,7 @@ export function GeneratePanel({
             <label htmlFor={`${id}-title`} className={labelClass}>
               Название (необязательно)
             </label>
-            <input id={`${id}-title`} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} className={`${inputClass} mt-2`} />
+            <input id={`${id}-title`} value={title} onChange={(e) => patch({ title: e.target.value })} maxLength={TITLE_MAX} className={`${inputClass} mt-2`} />
           </div>
         </div>
       )}
@@ -437,7 +451,7 @@ export function GeneratePanel({
             <label htmlFor={`${id}-aspect`} className={labelClass}>
               Формат кадра
             </label>
-            <select id={`${id}-aspect`} value={aspect} onChange={(e) => setAspect(e.target.value as AspectRatio)} className={`${inputClass} mt-2`}>
+            <select id={`${id}-aspect`} value={aspect} onChange={(e) => patch({ aspect: e.target.value as AspectRatio })} className={`${inputClass} mt-2`}>
               {ASPECT_RATIOS.map((ratio) => (
                 <option key={ratio} value={ratio}>
                   {ratio === "9:16" ? "9:16 — вертикальный, для Reels" : ratio}
@@ -453,7 +467,7 @@ export function GeneratePanel({
               <select
                 id={`${id}-duration`}
                 value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
+                onChange={(e) => patch({ duration: Number(e.target.value) })}
                 className={`${inputClass} mt-2`}
               >
                 <option value={5}>5 секунд{staff ? "" : ` · ${option.stars} ★`}</option>
@@ -466,7 +480,7 @@ export function GeneratePanel({
 
       {action === "video" && (
         <label className="flex items-start gap-3">
-          <input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} className="mt-1 size-5 accent-violet" />
+          <input type="checkbox" checked={sound} onChange={(e) => patch({ sound: e.target.checked })} className="mt-1 size-5 accent-violet" />
           <span>
             Звук модели
             <span className="block text-sm text-ink-soft">Обычно выключен: по-русски модель говорит неразборчиво, реплики озвучиваем отдельно.</span>

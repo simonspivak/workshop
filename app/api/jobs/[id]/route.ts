@@ -18,7 +18,8 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/jobs/[i
     const user = await authorize();
     const { id } = await ctx.params;
     const job = await loadJobForViewer(user, id);
-    if (!job) return json({ error: "not_found" }, 404);
+    // удалённая владельцем задача наружу не отдаётся — как будто её нет
+    if (!job || job.deleted_at) return json({ error: "not_found" }, 404);
     const current = await advanceJob(job);
     return json({ job: await toJobView(current, { revealHidden: isStaff(user) }) }, 200);
   } catch (error) {

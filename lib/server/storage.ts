@@ -103,7 +103,7 @@ export async function resolveReferences(
     const ids = [...new Set(jobRefs.map((ref) => ref.jobId))];
     const { data: jobs, error } = await createAdminClient()
       .from("jobs")
-      .select("id, user_id, group_id, status, hidden, storage_path, extra_paths")
+      .select("id, user_id, group_id, status, hidden, deleted_at, storage_path, extra_paths")
       .in("id", ids);
     if (error) throw new Error(`storage.resolveReferences: jobs query failed (${error.code})`);
     const byId = new Map((jobs ?? []).map((job) => [job.id, job]));
@@ -111,7 +111,9 @@ export async function resolveReferences(
 
     for (const ref of jobRefs) {
       const job = byId.get(ref.jobId);
-      if (!job || job.user_id !== ref.ownerId || job.status !== "done" || job.hidden) return { ok: false, error: "bad_reference" };
+      if (!job || job.user_id !== ref.ownerId || job.status !== "done" || job.hidden || job.deleted_at) {
+        return { ok: false, error: "bad_reference" };
+      }
       if (job.storage_path !== ref.value && !job.extra_paths.includes(ref.value)) return { ok: false, error: "bad_reference" };
       const own = job.user_id === user.id;
       const sharedInGroup =

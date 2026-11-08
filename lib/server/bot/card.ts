@@ -45,10 +45,10 @@ export async function avatarPath(bot: Pick<BotRecord, "avatarJobId" | "ownerId">
   if (!bot.avatarJobId) return null;
   const { data } = await createAdminClient()
     .from("jobs")
-    .select("user_id, status, action, storage_path, hidden")
+    .select("user_id, status, action, storage_path, hidden, deleted_at")
     .eq("id", bot.avatarJobId)
     .maybeSingle();
-  if (!data || data.user_id !== bot.ownerId || data.status !== "done" || data.hidden || !data.storage_path) return null;
+  if (!data || data.user_id !== bot.ownerId || data.status !== "done" || data.hidden || data.deleted_at || !data.storage_path) return null;
   if (data.action !== "image" && data.action !== "image_edit") return null;
   return data.storage_path;
 }

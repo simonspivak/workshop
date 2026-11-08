@@ -194,6 +194,7 @@ export async function listStudioMedia(user: SessionUser): Promise<StudioMediaRes
       .select(columns)
       .eq("status", "done")
       .eq("hidden", false)
+      .is("deleted_at", null)
       .in("action", MEDIA_ACTIONS)
       .not("storage_path", "is", null);
 

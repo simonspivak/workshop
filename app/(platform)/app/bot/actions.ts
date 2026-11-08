@@ -145,12 +145,17 @@ function parseLeadForm(raw: string): { form: LeadForm | null; error: string | nu
 async function avatarAllowed(userId: string, jobId: string): Promise<boolean> {
   const { data } = await createAdminClient()
     .from("jobs")
-    .select("id, status, action, storage_path, hidden")
+    .select("id, status, action, storage_path, hidden, deleted_at")
     .eq("id", jobId)
     .eq("user_id", userId)
     .maybeSingle();
   return Boolean(
-    data && data.status === "done" && !data.hidden && data.storage_path && (data.action === "image" || data.action === "image_edit"),
+    data &&
+      data.status === "done" &&
+      !data.hidden &&
+      !data.deleted_at &&
+      data.storage_path &&
+      (data.action === "image" || data.action === "image_edit"),
   );
 }
 

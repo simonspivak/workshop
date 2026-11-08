@@ -18,6 +18,7 @@ export type AuditAction =
   | "stars.grant" // пишет SQL-функция grant_stars
   | "job.hide"
   | "job.unhide"
+  | "job.delete" // ученик удалил свой результат (или ведущий — результат ученика)
   | "moderation.blocked"
   | "bot.telegram_connect"
   | "bot.telegram_disconnect"
