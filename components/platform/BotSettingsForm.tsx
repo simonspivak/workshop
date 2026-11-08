@@ -7,7 +7,7 @@ import type { BotTools, LeadFieldType, LeadForm } from "@/lib/server/bot/tools";
 import { Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 
 /*
-  Конструктор бота: имя, адрес, душа, инструменты (заявки с полями, открытка, «мой текст») и аватар.
+  Конструктор бота: имя, адрес, характер, инструменты (заявки с полями, открытка, «мой текст») и аватар.
   Отправка вручную (onSubmit + startTransition), а не через <form action>: так поля не сбрасываются,
   если сервер вернул ошибку.
 */
@@ -37,7 +37,7 @@ const FIELD_TYPE_LABELS: Record<LeadFieldType, string> = {
 
 const FIELDS_MAX = 4;
 
-const SOUL_TEMPLATE = `ДУША БОТА v1
+const SOUL_TEMPLATE = `ХАРАКТЕР БОТА v1
 Кто ты: (2 предложения от первого лица: кто ты в сериале «На масле»; обязательно «я ИИ-персонаж»)
 Как говоришь: (манера, длина ответа — до 3 предложений, 3 фирменные фразы, эмодзи да/нет)
 Чем полезен: (одна главная польза)
@@ -162,7 +162,7 @@ export function BotSettingsForm({
       <section aria-labelledby="bot-soul">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <label id="bot-soul" htmlFor="bot-soul-text" className="font-display text-lg font-semibold">
-            Душа
+            Характер
           </label>
           <span className="font-mono text-xs text-ink-soft">
             {soul.length} / {limits.soulMax}
@@ -170,7 +170,7 @@ export function BotSettingsForm({
         </div>
         <p className={hintClass}>
           Кто бот, как говорит, чем полезен, чего никогда не делает. Строки «Приветствие:» и «Кнопки:» платформа покажет
-          гостям в начале чата. Над душой всегда стоят правила платформы: их не видно и их нельзя отменить.
+          гостям в начале чата. Над характером всегда стоят правила платформы: их не видно и их нельзя отменить.
         </p>
         <textarea
           id="bot-soul-text"
@@ -180,11 +180,11 @@ export function BotSettingsForm({
           maxLength={limits.soulMax}
           rows={12}
           className={`${inputClass} mt-3 font-mono text-sm leading-relaxed`}
-          placeholder="ДУША БОТА v1&#10;Кто ты: …"
+          placeholder="ХАРАКТЕР БОТА v1&#10;Кто ты: …"
         />
         {!soul.trim() && (
           <button type="button" onClick={() => setSoul(SOUL_TEMPLATE)} className={`${buttonClass("secondary", "sm")} mt-2`}>
-            Вставить шаблон души
+            Вставить шаблон характера
           </button>
         )}
         <FieldError message={errors.soul} />

@@ -5,7 +5,7 @@ import { getUser } from "@/lib/server/dal/auth";
 import { appUrl } from "@/lib/server/env";
 
 /*
-  GET /app/bot/soul.txt — «Скачать душу»: душа, «Мой текст» и форма заявки одним файлом.
+  GET /app/bot/soul.txt — «Скачать характер»: характер, «Мой текст» и форма заявки одним файлом.
   Только владелец. Работает и после срока жизни бота.
 */
 
@@ -30,7 +30,7 @@ export async function GET() {
   return new Response(text, {
     headers: {
       "content-type": "text/plain; charset=utf-8",
-      "content-disposition": `attachment; filename="dusha-${bot.slug}.txt"`,
+      "content-disposition": `attachment; filename="character-${bot.slug}.txt"`,
       "cache-control": "no-store",
     },
   });

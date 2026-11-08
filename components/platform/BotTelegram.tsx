@@ -47,7 +47,7 @@ export function BotTelegram({
           >
             @{telegram.username} <ExternalLink aria-hidden="true" className="size-4" />
           </a>
-          . Душа и инструменты те же, что на странице бота. Открыток в Telegram нет: бот отправит на свою страницу.
+          . Характер и инструменты те же, что на странице бота. Открыток в Telegram нет: бот отправит на свою страницу.
         </p>
         {telegram.ownerLinked ? (
           <Notice tone="success">Уведомления о заявках приходят вам в этот чат.</Notice>

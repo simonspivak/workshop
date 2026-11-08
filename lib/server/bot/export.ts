@@ -3,7 +3,7 @@ import { LEAD_FIELD_HINTS, type LeadForm } from "@/lib/server/bot/tools";
 
 /*
   «Забери бота с собой» (docs/platform/spec.md §5, docs/course/bot-kit/README.md):
-  душа, «Мой текст» и форма заявки одним текстом — для копирования и файла «Скачать душу».
+  характер, «Мой текст» и форма заявки одним текстом — для копирования и файла «Скачать характер».
 */
 
 export function leadFormText(form: LeadForm | null): string {
@@ -28,9 +28,9 @@ export function soulExportText(input: {
   exportedOn: string;
 }): string {
   const line = "==========";
-  const parts = [`ДУША БОТА — ${input.name}`];
+  const parts = [`ХАРАКТЕР БОТА — ${input.name}`];
   if (input.pageUrl) parts.push(`Страница на платформе «ИИ-старт»: ${input.pageUrl}`);
-  parts.push(`Скачано: ${input.exportedOn}`, "", input.soul.trim() || "(душа пока пустая)");
+  parts.push(`Скачано: ${input.exportedOn}`, "", input.soul.trim() || "(характер пока пустой)");
   if (input.knowledge.trim()) {
     parts.push(
       "",

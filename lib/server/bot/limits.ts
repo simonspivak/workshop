@@ -2,7 +2,7 @@ import "server-only";
 
 /*
   Лимиты ботов (docs/platform/spec.md §5, docs/course/lesson-3.md §8.3 и §14.4).
-  Длины души и знаний совпадают с check-ограничениями таблицы bots в миграции.
+  Длины характера и знаний совпадают с check-ограничениями таблицы bots в миграции.
 */
 export const BOT_LIMITS = {
   nameMax: 60,

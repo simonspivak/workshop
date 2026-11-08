@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 const tools = [
   { href: "/app/gallery", title: "Галерея", text: "Все ваши картинки, озвучки и клипы.", icon: Images },
-  { href: "/app/bot", title: "Мой бот", text: "Бот с вашей «душой»: веб-чат и Telegram.", icon: Bot },
+  { href: "/app/bot", title: "Мой бот", text: "Бот с вашим «характером»: веб-чат и Telegram.", icon: Bot },
   { href: "/app/studio", title: "Монтаж", text: "Склейка клипов, реплик и музыки в один ролик.", icon: Clapperboard },
 ] as const;
 

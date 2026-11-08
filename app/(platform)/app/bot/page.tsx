@@ -47,7 +47,7 @@ async function BotConstructor() {
     return (
       <>
         <PageTitle eyebrow="Урок 3" title="Мой бот">
-          Бот — это ваш герой с мозгом и правилами. У него своя страница со ссылкой, душа, заявки и открытки.
+          Бот — это ваш герой с мозгом и правилами. У него своя страница со ссылкой, характер, заявки и открытки.
         </PageTitle>
         <Card title="Создать бота">
           <BotCreateForm action={createBot} maxLength={BOT_LIMITS.nameMax} />
@@ -72,7 +72,7 @@ async function BotConstructor() {
   return (
     <>
       <PageTitle eyebrow="Урок 3 · Мой бот" title={bot.name}>
-        Душа, инструменты и окна вашего бота. Справа — проверка: тот же мозг, что у гостей.
+        Характер, инструменты и окна вашего бота. Справа — проверка: тот же мозг, что у гостей.
       </PageTitle>
       <BotNav current="settings" leadsCount={bot.leadsCount} publicPath={bot.publicPath} retired={false} />
 
@@ -80,7 +80,7 @@ async function BotConstructor() {
         {bot.lifetime.limited && bot.lifetime.lastDay && bot.lifetime.daysLeft !== null && (
           <Notice tone={bot.lifetime.daysLeft <= 3 ? "warn" : "info"}>
             Бот работает на платформе до {formatDay(bot.lifetime.lastDay)} ({daysLeftText(bot.lifetime.daysLeft)}). Потом он
-            переедет: душу и набор для переноса забирайте во вкладке «Забери с собой».
+            переедет: характер и набор для переноса забирайте во вкладке «Забери с собой».
           </Notice>
         )}
         {!bot.active && (
