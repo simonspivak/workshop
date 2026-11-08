@@ -32,7 +32,7 @@ type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
 
 export const JOB_COLUMNS =
   "id, user_id, group_id, action, model, status, stars, prompt, result_text, storage_path, extra_paths, " +
-  "mime_type, error, hidden, gateway_task_id, lesson_id, task_ref, created_at, updated_at, submitted_at, completed_at";
+  "mime_type, error, hidden, deleted_at, gateway_task_id, lesson_id, task_ref, created_at, updated_at, submitted_at, completed_at";
 
 export type JobRecord = Pick<
   JobRow,
@@ -50,6 +50,7 @@ export type JobRecord = Pick<
   | "mime_type"
   | "error"
   | "hidden"
+  | "deleted_at"
   | "gateway_task_id"
   | "lesson_id"
   | "task_ref"

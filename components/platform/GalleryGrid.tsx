@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Check, Eye, EyeOff, ExternalLink, Pin } from "lucide-react";
+import { DeleteJobButton, canDeleteJob } from "@/components/platform/DeleteJobButton";
 import { useLiveJob, useReferenceTray } from "@/components/platform/GenerateClient";
 import { JobMedia, JobMeta, JobStatusLine } from "@/components/platform/GenerateJobCard";
 import { buttonClass } from "@/components/platform/ui";
@@ -21,8 +22,10 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", {
 
 /**
  * Сетка галереи. Незавершённые задачи сами опрашивают /api/jobs/[id] раз в 5 секунд.
- * Ученик: «Как референс» кладёт файл в корзину референсов для форм генерации в уроках.
- * Ведущий: скрыть / показать результат (hideAction — Server Action с аудитом).
+ * Ученик: «Как референс» кладёт файл в корзину референсов для форм генерации в уроках;
+ * свои результаты можно удалить (мягко, без возврата звёзд). Ведущий: скрыть / показать
+ * результат (hideAction — Server Action с аудитом) и удалить результат ученика.
+ * Удалённая карточка пропадает сразу; сервер (refresh в действии) пришлёт список уже без неё.
  */
 export function GalleryGrid({
   items,
@@ -35,20 +38,34 @@ export function GalleryGrid({
   hideAction?: HideAction;
   emptyText: string;
 }) {
-  if (items.length === 0) return <p className="rounded-3xl bg-lavender p-5 text-ink-soft">{emptyText}</p>;
+  const [removed, setRemoved] = useState<string[]>([]);
+  const visible = removed.length ? items.filter((item) => !removed.includes(item.id)) : items;
+  if (visible.length === 0) return <p className="rounded-3xl bg-lavender p-5 text-ink-soft">{emptyText}</p>;
   return (
     <ul className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => (
+      {visible.map((item) => (
         <li key={item.id}>
-          <GalleryCard item={item} mode={mode} hideAction={hideAction} />
+          <GalleryCard item={item} mode={mode} hideAction={hideAction} onDeleted={(id) => setRemoved((list) => [...list, id])} />
         </li>
       ))}
     </ul>
   );
 }
 
-function GalleryCard({ item, mode, hideAction }: { item: GalleryItem; mode: "student" | "teacher"; hideAction?: HideAction }) {
+function GalleryCard({
+  item,
+  mode,
+  hideAction,
+  onDeleted,
+}: {
+  item: GalleryItem;
+  mode: "student" | "teacher";
+  hideAction?: HideAction;
+  onDeleted: (jobId: string) => void;
+}) {
   const job = useLiveJob(item);
+  // своё — ученик и ведущий; чужое в группе — только ведущий (сервер проверяет группу)
+  const deletable = canDeleteJob(job) && (item.mine || mode === "teacher");
   return (
     <article className="flex h-full flex-col gap-3 rounded-3xl bg-white p-4 ring-1 ring-ink/10">
       <JobMeta job={job} author={item.author} />
@@ -75,7 +92,10 @@ function GalleryCard({ item, mode, hideAction }: { item: GalleryItem; mode: "stu
         <time dateTime={job.createdAt} className="font-mono text-xs text-ink-soft">
           {dateFormat.format(new Date(job.createdAt))}
         </time>
-        {mode === "teacher" && hideAction && job.status === "done" && <HideToggle jobId={job.id} hidden={job.hidden} action={hideAction} />}
+        <div className="flex flex-wrap items-center gap-2">
+          {mode === "teacher" && hideAction && job.status === "done" && <HideToggle jobId={job.id} hidden={job.hidden} action={hideAction} />}
+          {deletable && <DeleteJobButton job={job} onDeleted={onDeleted} />}
+        </div>
       </div>
     </article>
   );

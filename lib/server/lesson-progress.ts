@@ -37,6 +37,7 @@ export async function getLessonState(user: SessionUser, lessonId: string): Promi
       .select(JOB_COLUMNS)
       .eq("user_id", user.id)
       .eq("lesson_id", lessonId)
+      .is("deleted_at", null)
       .not("task_ref", "is", null)
       .order("created_at", { ascending: false })
       .limit(80)

@@ -49,6 +49,8 @@ export type MediaOption = {
   library?: boolean;
   /** задача, из которой файл (озвучка или музыка и т. п.); у библиотеки курса нет */
   action?: JobAction;
+  /** звук: начало реплики или название трека — чтобы выбирать не вслепую */
+  text?: string;
 };
 
 export const jobActionLabels: Record<JobAction, string> = {

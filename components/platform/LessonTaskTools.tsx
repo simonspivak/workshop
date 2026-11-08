@@ -47,6 +47,8 @@ export function LessonTaskTools({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [created, setCreated] = useState<JobView[]>([]);
+  // удалённые учеником результаты: убираем сразу, сервер после refresh их уже не пришлёт
+  const [removed, setRemoved] = useState<string[]>([]);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   // запрос «прокрути к полю и поставь курсор»: счётчик, эффект ниже
   const [focusRequest, setFocusRequest] = useState(0);
@@ -88,8 +90,8 @@ export function LessonTaskTools({
   // новые результаты сверху; после router.refresh() сервер пришлёт их же — не дублируем
   const jobs = useMemo(() => {
     const ids = new Set(created.map((j) => j.id));
-    return [...created, ...results.filter((j) => !ids.has(j.id))];
-  }, [created, results]);
+    return [...created, ...results.filter((j) => !ids.has(j.id))].filter((j) => !removed.includes(j.id));
+  }, [created, results, removed]);
 
   // Ответы чата видны в переписке над кнопкой. Внизу — картинки, видео и звук; удачные ответы чата
   // свёрнуты (пригодятся на другом устройстве), неудачные не показываем: ошибка уже была у кнопки,
@@ -98,6 +100,7 @@ export function LessonTaskTools({
   const textJobs = jobs.filter((job) => job.action === "text" && job.status !== "failed");
 
   const onSettled = useCallback(() => router.refresh(), [router]);
+  const onDeleted = useCallback((jobId: string) => setRemoved((list) => [...list, jobId]), []);
 
   const canGenerate = options.length > 0;
 
@@ -198,7 +201,7 @@ export function LessonTaskTools({
           <ul className="space-y-3 px-4 pb-4">
             {textJobs.map((job) => (
               <li key={job.id}>
-                <GenerateJobCard job={job} onSettled={onSettled} />
+                <GenerateJobCard job={job} onSettled={onSettled} onDeleted={onDeleted} />
               </li>
             ))}
           </ul>
@@ -211,7 +214,7 @@ export function LessonTaskTools({
           <ul className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {mediaJobs.map((job) => (
               <li key={job.id}>
-                <GenerateJobCard job={job} onSettled={onSettled} />
+                <GenerateJobCard job={job} onSettled={onSettled} onDeleted={onDeleted} />
               </li>
             ))}
           </ul>

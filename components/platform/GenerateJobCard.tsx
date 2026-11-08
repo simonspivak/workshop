@@ -3,6 +3,7 @@
 import { RichText } from "@/components/platform/RichText";
 import { useState, type ReactNode } from "react";
 import { Check, Copy, EyeOff, LoaderCircle, TriangleAlert } from "lucide-react";
+import { DeleteJobButton, canDeleteJob } from "@/components/platform/DeleteJobButton";
 import { useLiveJob } from "@/components/platform/GenerateClient";
 import { Badge, Stars } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
@@ -126,8 +127,19 @@ export function JobMeta({ job, author }: { job: JobView; author?: string | null 
   );
 }
 
-/** Результат генерации в уроке: сам опрашивает сервер, пока задача не готова. */
-export function GenerateJobCard({ job: initial, onSettled }: { job: JobView; onSettled?: (job: JobView) => void }) {
+/**
+ * Результат генерации в уроке: сам опрашивает сервер, пока задача не готова.
+ * onDeleted — показать «Удалить» (свои результаты: готовые и неудачные) и убрать карточку после удаления.
+ */
+export function GenerateJobCard({
+  job: initial,
+  onSettled,
+  onDeleted,
+}: {
+  job: JobView;
+  onSettled?: (job: JobView) => void;
+  onDeleted?: (jobId: string) => void;
+}) {
   const job = useLiveJob(initial, onSettled);
   return (
     <article className="space-y-3 rounded-3xl bg-white p-4 ring-1 ring-ink/10">
@@ -145,6 +157,11 @@ export function GenerateJobCard({ job: initial, onSettled }: { job: JobView; onS
       )}
       <JobStatusLine job={job} />
       <JobMedia job={job} />
+      {onDeleted && canDeleteJob(job) && (
+        <div className="flex justify-end">
+          <DeleteJobButton job={job} onDeleted={onDeleted} />
+        </div>
+      )}
     </article>
   );
 }

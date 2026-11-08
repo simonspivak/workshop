@@ -3,10 +3,13 @@ import { AuthError, isStaff, type SessionUser } from "@/lib/server/dal/auth";
 import { assertTeachesGroup, isUuid } from "@/lib/server/dal/teacher";
 import { audit } from "@/lib/server/audit";
 import { JOB_COLUMNS, toJobViews, type JobRecord } from "@/lib/server/job-progress";
+import { MEDIA_BUCKET } from "@/lib/server/jobs";
 import { mediaKindOfPath } from "@/lib/server/media-refs";
 import { listLibrary, MOTION_LIBRARY_FOLDER, signMediaPaths } from "@/lib/server/storage";
+import { lineText } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
+import type { Json } from "@/lib/server/supabase/types";
 import {
   jobActionLabels,
   type GalleryItem,
@@ -20,6 +23,8 @@ import {
   свои группы; общая галерея группы — только готовое и не скрытое, если ведущий её открыл).
   Подписи ссылок и ники одногруппников — admin-клиентом после явной проверки.
   Текстовые ответы в галерею не попадают: они остаются в уроке.
+  Удалённые владельцем результаты (jobs.deleted_at) нигде не показываются: строка остаётся
+  ради журнала звёзд и отчётов, файлы из Storage убраны.
 */
 
 export const GALLERY_PAGE_SIZE = 24;
@@ -52,6 +57,7 @@ export async function listMyGallery(user: SessionUser, query: GalleryQuery = {})
     .from("jobs")
     .select(JOB_COLUMNS)
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .in("action", actionsFor(query.kind))
     .neq("status", "failed")
     .order("created_at", { ascending: false })
@@ -81,6 +87,7 @@ export async function listSharedGroupGallery(user: SessionUser, query: GalleryQu
     .neq("user_id", user.id)
     .eq("status", "done")
     .eq("hidden", false)
+    .is("deleted_at", null)
     .in("action", actionsFor(query.kind))
     .order("created_at", { ascending: false })
     .range(from, to)
@@ -115,6 +122,7 @@ export async function listGroupGalleryForTeacher(
     .from("jobs")
     .select(JOB_COLUMNS)
     .eq("group_id", groupId)
+    .is("deleted_at", null)
     .in("action", actionsFor(query.kind))
     .neq("status", "failed");
   if (query.studentId && isUuid(query.studentId)) request = request.eq("user_id", query.studentId);
@@ -188,6 +196,69 @@ export async function setJobHidden(
   return { ok: true, groupId: group.id };
 }
 
+// ---------- удалить результат (владелец или ведущий) ----------
+
+export type DeleteJobError = "not_found" | "forbidden" | "job_active";
+
+/**
+ * Мягкое удаление: deleted_at, запись в audit_log (job.delete), файлы из Storage — по возможности.
+ * Звёзды не возвращаются и журнал не меняется: потраченное остаётся потраченным.
+ * Свою задачу удаляет любой пользователь, задачу ученика своей группы — ведущий, любую — админ.
+ * Только готовые или неудачные задачи: идущую нельзя (её ещё опрашивает шлюз и могут вернуть звёзды).
+ * Повторный вызов по уже удалённой — ok (двойной клик, вторая вкладка).
+ */
+export async function deleteJob(user: SessionUser, jobId: string): Promise<{ ok: true } | { ok: false; error: DeleteJobError }> {
+  if (!isUuid(jobId)) return { ok: false, error: "not_found" };
+  const admin = createAdminClient();
+  const { data: job, error } = await admin
+    .from("jobs")
+    .select("id, user_id, group_id, action, status, storage_path, extra_paths, deleted_at")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (error) throw new Error(`gallery.deleteJob load failed (${error.code})`);
+  if (!job) return { ok: false, error: "not_found" };
+
+  const own = job.user_id === user.id;
+  if (!own) {
+    if (!isStaff(user)) return { ok: false, error: "forbidden" };
+    if (user.role !== "admin") {
+      if (!job.group_id) return { ok: false, error: "forbidden" };
+      await assertTeachesGroup(user, job.group_id); // чужая группа — AuthError('forbidden')
+    }
+  }
+  if (job.deleted_at) return { ok: true };
+  if (job.status !== "done" && job.status !== "failed") return { ok: false, error: "job_active" };
+
+  const { error: updateError } = await admin
+    .from("jobs")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", job.id)
+    .is("deleted_at", null);
+  if (updateError) throw new Error(`gallery.deleteJob update failed (${updateError.code})`);
+
+  await audit({
+    actorId: user.id,
+    action: "job.delete",
+    targetUser: job.user_id,
+    targetGroup: job.group_id,
+    meta: { jobId: job.id, action: job.action, status: job.status, own },
+  });
+
+  // Файлы — только из папки владельца (библиотеку курса не трогаем); сбой не мешает удалению
+  const paths = [job.storage_path, ...job.extra_paths].filter(
+    (path): path is string => Boolean(path) && (path as string).startsWith(`${job.user_id}/`),
+  );
+  if (paths.length) {
+    try {
+      const { error: removeError } = await admin.storage.from(MEDIA_BUCKET).remove(paths);
+      if (removeError) console.error("gallery.deleteJob: storage remove failed", { jobId: job.id, message: removeError.message });
+    } catch (cause) {
+      console.error("gallery.deleteJob: storage remove threw", { jobId: job.id, error: String(cause) });
+    }
+  }
+  return { ok: true };
+}
+
 // ---------- файлы для референсов ----------
 
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "Europe/Berlin" });
@@ -200,10 +271,11 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
   const supabase = await createClient();
   const own = supabase
     .from("jobs")
-    .select("id, user_id, action, prompt, storage_path, extra_paths, created_at")
+    .select("id, user_id, action, params, prompt, storage_path, extra_paths, created_at")
     .eq("user_id", user.id)
     .eq("status", "done")
     .eq("hidden", false)
+    .is("deleted_at", null)
     .in("action", MEDIA_ACTIONS)
     .order("created_at", { ascending: false })
     .limit(40);
@@ -211,11 +283,12 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
     user.group?.shareGallery && !isStaff(user)
       ? supabase
           .from("jobs")
-          .select("id, user_id, action, prompt, storage_path, extra_paths, created_at")
+          .select("id, user_id, action, params, prompt, storage_path, extra_paths, created_at")
           .eq("group_id", user.group.id)
           .neq("user_id", user.id)
           .eq("status", "done")
           .eq("hidden", false)
+          .is("deleted_at", null)
           .in("action", MEDIA_ACTIONS)
           .order("created_at", { ascending: false })
           .limit(20)
@@ -242,6 +315,7 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
     if (!url || !kind) return [];
     const who = row.user_id === user.id ? "" : `${authors.get(row.user_id) ?? "группа"} · `;
     const extra = index > 0 ? ` · файл ${index + 1}` : "";
+    const text = kind === "audio" ? audioText(row.action, row.params, row.prompt) : undefined;
     return [
       {
         path,
@@ -249,9 +323,18 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
         kind,
         label: `${who}${jobActionLabels[row.action]} · ${shortDate.format(new Date(row.created_at))}${extra}`,
         action: row.action,
+        ...(text ? { text } : {}),
       },
     ];
   });
+}
+
+/** Подпись звука в выборе референсов: начало реплики (озвучка) или название трека (музыка). */
+function audioText(action: JobAction, params: Json, prompt: string | null): string | undefined {
+  if (action === "voice") return lineText(params, prompt) ?? undefined;
+  const title = params && typeof params === "object" && !Array.isArray(params) && typeof params.title === "string" ? params.title.trim() : "";
+  const raw = (title || prompt || "").replace(/\s+/g, " ").trim();
+  return raw ? (raw.length > 120 ? `${raw.slice(0, 119)}…` : raw) : undefined;
 }
 
 /** Драйверы движения из библиотеки курса (для motion). */
