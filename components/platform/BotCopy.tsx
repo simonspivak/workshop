@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { buttonClass } from "@/components/platform/ui";
 
-/** Текст для копирования: душа, «Мой текст», поля формы («Забери бота с собой»). */
+/** Текст для копирования: характер, «Мой текст», поля формы («Забери бота с собой»). */
 export function BotCopy({ title, text, rows = 10 }: { title: string; text: string; rows?: number }) {
   const [copied, setCopied] = useState(false);
   const id = `copy-${title.replace(/[^a-zа-яё0-9]+/gi, "-").toLowerCase()}`;

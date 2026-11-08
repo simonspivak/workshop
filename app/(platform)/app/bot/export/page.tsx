@@ -26,7 +26,7 @@ const KIT = [
   {
     href: "/bot-kit/n8n-telegram-bot.json",
     title: "Шаблон n8n",
-    text: "Путь 2: импортируйте в свой n8n, вставьте душу, токен Telegram и ключ Gemini.",
+    text: "Путь 2: импортируйте в свой n8n, вставьте характер, токен Telegram и ключ Gemini.",
     icon: FileJson,
     download: "n8n-telegram-bot.json",
   },
@@ -52,7 +52,7 @@ async function BotExport() {
   return (
     <>
       <PageTitle eyebrow="Мой бот" title="Забери бота с собой">
-        Бот — это прежде всего душа: характер, манера и правила, которые вы придумали. Код можно написать заново, а душу
+        Бот — это прежде всего характер: манера и правила, которые вы придумали. Код можно написать заново, а характер
         заберите отсюда.
       </PageTitle>
       <BotNav current="export" leadsCount={bot.leadsCount} publicPath={bot.publicPath} retired={lifetime.retired} />
@@ -72,13 +72,13 @@ async function BotExport() {
           <Notice>Ваш бот на платформе без срока. Набор ниже пригодится, если захотите свой собственный бот.</Notice>
         )}
 
-        <Card title="1. Душа и тексты">
+        <Card title="1. Характер и тексты">
           <div className="space-y-6">
-            <BotCopy title="Душа" text={bot.soul || "(душа пока пустая)"} rows={12} />
+            <BotCopy title="Характер" text={bot.soul || "(характер пока пустой)"} rows={12} />
             {bot.knowledge.trim() && <BotCopy title="Мой текст" text={bot.knowledge} rows={8} />}
             {formText && <BotCopy title="Поля заявки" text={formText} rows={Math.min(8, formText.split("\n").length + 1)} />}
             <a href="/app/bot/soul.txt" download className={buttonClass("primary")}>
-              <Download aria-hidden="true" className="size-5" /> Скачать душу (.txt)
+              <Download aria-hidden="true" className="size-5" /> Скачать характер (.txt)
             </a>
           </div>
         </Card>

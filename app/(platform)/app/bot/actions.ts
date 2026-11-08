@@ -65,7 +65,7 @@ async function moderateOwnerFields(
         targetGroup: user.group?.id,
         meta: { source: "bot", field, reason: result.reason },
       });
-      // В душе стоп-слова чаще всего — список запретов: подсказываем, что правила платформы его уже содержат
+      // В характере стоп-слова чаще всего — список запретов: подсказываем, что правила платформы его уже содержат
       const code = result.reason === "stop_word" ? "owner_stop_word" : result.reason;
       return botFail(code, { [field]: botFail(code).message });
     }
