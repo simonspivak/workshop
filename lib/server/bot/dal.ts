@@ -132,6 +132,7 @@ export async function listMyImages(user: SessionUser): Promise<GalleryImage[]> {
     .eq("user_id", user.id)
     .eq("status", "done")
     .eq("hidden", false)
+    .is("deleted_at", null)
     .in("action", ["image", "image_edit"])
     .not("storage_path", "is", null)
     .order("created_at", { ascending: false })

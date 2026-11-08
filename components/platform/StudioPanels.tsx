@@ -10,7 +10,7 @@ import type { MusicLevel } from "@/lib/platform/montage/args";
 import type { StudioDesign } from "@/lib/platform/montage/project";
 import type { StudioMediaItem } from "@/lib/platform/montage/types";
 import { Badge, Card, Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
-import { PlayButton } from "@/components/platform/StudioThumb";
+import { PlayButton } from "@/components/platform/AudioPreview";
 
 // ---------- музыка ----------
 

@@ -7,7 +7,8 @@ import { formatSeconds } from "@/lib/platform/montage/messages";
 import type { MediaIndex, StudioScene } from "@/lib/platform/montage/project";
 import type { StudioMediaItem } from "@/lib/platform/montage/types";
 import { Badge, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
-import { PlayButton, StudioThumb } from "@/components/platform/StudioThumb";
+import { PlayButton } from "@/components/platform/AudioPreview";
+import { StudioThumb } from "@/components/platform/StudioThumb";
 
 type SceneActions = {
   move: (key: string, delta: -1 | 1) => void;

@@ -81,6 +81,8 @@ type JobRow = Timestamps & {
   error: string | null;
   hidden: boolean;
   hidden_by: string | null;
+  /** мягкое удаление владельцем или ведущим (20261108120000_job_delete); звёзды не возвращаются */
+  deleted_at: string | null;
   lesson_id: string | null;
   task_ref: string | null;
   last_polled_at: string | null;

@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { Check, Link2, Music, X } from "lucide-react";
+import { PlayButton, useAudioPreview } from "@/components/platform/AudioPreview";
 import { useReferenceTray } from "@/components/platform/GenerateClient";
 import { buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import type { JobAction, MediaKind, MediaOption } from "@/lib/platform/generation-types";
@@ -11,6 +12,8 @@ import type { JobAction, MediaKind, MediaOption } from "@/lib/platform/generatio
  * Сначала — отмеченные в галерее кнопкой «Как референс». Ведущий может вставить https-ссылку.
  * actions — показывать только файлы этих задач (например, озвучку без музыки); файлы без
  * известной задачи (библиотека курса, старые отметки в галерее) тогда не показываются.
+ * Звук (озвучка, музыка) можно послушать до выбора: кнопка «Послушать» на плитке, один плеер
+ * на панель — новый включился, старый замолчал; панель закрылась — звук остановился.
  */
 export function GenerateReferencePicker({
   label,
@@ -37,6 +40,7 @@ export function GenerateReferencePicker({
 }) {
   const id = useId();
   const tray = useReferenceTray();
+  const preview = useAudioPreview();
   const [url, setUrl] = useState("");
 
   const allowed = (o: { action?: JobAction }) => !actions || (o.action !== undefined && actions.includes(o.action));
@@ -72,20 +76,32 @@ export function GenerateReferencePicker({
           {tiles.map((option) => {
             const selected = value.includes(option.path);
             const order = value.indexOf(option.path) + 1;
+            const audio = option.kind === "audio";
+            const label = trayPaths.has(option.path) && !known.has(option.path) ? "Из галереи" : option.label;
+            const title = audio && option.text ? `${option.text} — ${label}` : label;
             return (
-              <li key={option.path} className="shrink-0 snap-start">
+              // кнопка «Послушать» — сосед кнопки выбора, не внутри: вложенные кнопки недопустимы,
+              // и клик по плееру не должен менять выбор
+              <li key={option.path} className="relative shrink-0 snap-start">
                 <button
                   type="button"
                   onClick={() => toggle(option.path)}
                   aria-pressed={selected}
-                  title={option.label}
-                  className={`relative flex h-32 w-24 flex-col overflow-hidden rounded-2xl bg-lavender text-left ring-2 transition-shadow ${
-                    selected ? "ring-violet" : "ring-transparent hover:ring-glow"
-                  }`}
+                  title={title}
+                  className={`relative flex h-32 flex-col overflow-hidden rounded-2xl bg-lavender text-left ring-2 transition-shadow ${
+                    audio ? "w-40" : "w-24"
+                  } ${selected ? "ring-violet" : "ring-transparent hover:ring-glow"}`}
                 >
                   <Thumb option={option} />
-                  <span className="line-clamp-2 bg-white/90 px-1.5 py-1 text-[11px] leading-tight">
-                    {trayPaths.has(option.path) && !known.has(option.path) ? "Из галереи" : option.label}
+                  <span className="bg-white/90 px-1.5 py-1 text-[11px] leading-tight">
+                    {audio && option.text ? (
+                      <>
+                        <span className="line-clamp-2 font-medium">{option.text}</span>
+                        <span className="block truncate text-ink-soft">{label}</span>
+                      </>
+                    ) : (
+                      <span className="line-clamp-2">{label}</span>
+                    )}
                   </span>
                   {selected && (
                     <span className="absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded-full bg-violet font-mono text-xs text-white">
@@ -93,6 +109,14 @@ export function GenerateReferencePicker({
                     </span>
                   )}
                 </button>
+                {audio && option.url && (
+                  <PlayButton
+                    playing={preview.playing === option.path}
+                    onClick={() => preview.toggle(option.path, option.url)}
+                    label={title}
+                    className="absolute top-4 left-1/2 -translate-x-1/2 bg-white shadow-md"
+                  />
+                )}
               </li>
             );
           })}
@@ -154,9 +178,10 @@ function Thumb({ option }: { option: MediaOption }) {
   if (option.kind === "video") {
     return <video src={`${option.url}#t=0.1`} muted playsInline preload="metadata" className="min-h-0 flex-1 bg-ink object-cover" />;
   }
+  // звук: значок в углу, в центре плитки — кнопка «Послушать» (рисуется рядом с кнопкой выбора)
   return (
-    <span className="flex flex-1 items-center justify-center text-violet" aria-hidden="true">
-      <Music className="size-8" />
+    <span className="relative flex-1" aria-hidden="true">
+      <Music className="absolute right-1.5 bottom-1 size-4 text-violet/70" />
     </span>
   );
 }
