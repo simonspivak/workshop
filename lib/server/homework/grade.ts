@@ -15,7 +15,7 @@ import { buildGradePrompt, GRADE_MAX_TOKENS, GRADE_SYSTEM_PROMPT, parseGradeJson
                                  └──▶ failed (модель не ответила или вернула не JSON дважды)
   Картинки, видео, звук и файлы больше MAX_EXTRACT_BYTES модель не читает: строка остаётся
   submitted с ai_error = media | too_large, оценивает ведущий.
-  Модель — цепочка generateText (Haiku → Kimi), звёзды ученика не тратятся: платит владелец.
+  Модель — цепочка generateText (Kimi → Haiku), звёзды ученика не тратятся: платит владелец.
   Захват строки (claim) — одним update со статусом и временем: два одновременных запроса
   (complete и опрос) не проверят работу дважды; зависшую проверку (> STALE_GRADING_SEC)
   следующий опрос перехватывает и проверяет заново.
