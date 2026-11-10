@@ -163,6 +163,36 @@ type BotLeadRow = {
   created_at: string;
 };
 
+export type HomeworkKind = "file" | "text" | "link";
+export type HomeworkStatus = "uploading" | "submitted" | "grading" | "graded" | "failed";
+
+/** Сдача домашки (миграция 20261110090000_homework). Одна действующая (superseded_at is null) на ученика и урок. */
+type HomeworkSubmissionRow = Timestamps & {
+  id: string;
+  user_id: string;
+  group_id: string | null;
+  lesson_id: string;
+  kind: HomeworkKind;
+  text_body: string | null;
+  link_url: string | null;
+  storage_path: string | null;
+  file_name: string | null;
+  mime: string | null;
+  size_bytes: number | null;
+  status: HomeworkStatus;
+  ai_score: number | null;
+  ai_feedback: Json | null;
+  ai_model: string | null;
+  ai_error: string | null;
+  grading_started_at: string | null;
+  graded_at: string | null;
+  teacher_score: number | null;
+  teacher_comment: string | null;
+  teacher_id: string | null;
+  teacher_graded_at: string | null;
+  superseded_at: string | null;
+};
+
 type AuditRow = {
   id: number;
   actor_id: string | null;
@@ -252,6 +282,7 @@ export type Database = {
       bots: Table<BotRow, "owner_id" | "slug" | "name">;
       bot_messages: Table<BotMessageRow, "bot_id" | "channel" | "conversation_id" | "role" | "content">;
       bot_leads: Table<BotLeadRow, "bot_id" | "channel" | "data">;
+      homework_submissions: Table<HomeworkSubmissionRow, "user_id" | "lesson_id" | "kind">;
       audit_log: Table<AuditRow, "action">;
     };
     Views: { [_ in never]: never };

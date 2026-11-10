@@ -8,11 +8,13 @@ import { StepToggle } from "./StepToggle";
 import { LessonSteps } from "@/components/platform/LessonSteps";
 import { LessonTaskTools } from "@/components/platform/LessonTaskTools";
 import { RichText } from "@/components/platform/RichText";
+import { HomeworkPanel } from "@/components/platform/HomeworkPanel";
 import { Badge, Card, Container, Notice, PageTitle, Skeleton } from "@/components/platform/ui";
 import { getLessonByNumber, getLessonStaffNotes, lessonProgressSteps, listLessons } from "@/lib/server/course";
 import { isStaff, requireUser } from "@/lib/server/dal/auth";
 import { listMotionLibrary, listReferenceOptions } from "@/lib/server/gallery";
 import { describeLessonActions } from "@/lib/server/generate-options";
+import { getLessonHomework } from "@/lib/server/homework/submissions";
 import { getLessonState } from "@/lib/server/lesson-progress";
 import { QUIZ_BONUS_STARS, quizBonusMinScore } from "@/lib/server/quiz";
 import { LESSON_STEP_HOMEWORK, LESSON_STEP_QUIZ, LESSON_STEP_THEORY, type LessonToolView, type LessonView } from "@/lib/platform/lesson-types";
@@ -50,10 +52,11 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
   const staff = isStaff(user);
   const usesMotion = lesson.tasks.some((task) => task.aiActions.some((a) => a.type === "motion"));
   const library = usesMotion ? await listMotionLibrary() : [];
-  const [state, actions, references] = await Promise.all([
+  const [state, actions, references, homework] = await Promise.all([
     getLessonState(user, lesson.id),
     describeLessonActions(user, lesson, { motionLibraryEmpty: library.length === 0 }),
     listReferenceOptions(user),
+    getLessonHomework(user, lesson.id),
   ]);
 
   const steps = lessonProgressSteps(lesson.id);
@@ -244,6 +247,9 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
                 {lesson.homework.deliverable}
               </p>
             )}
+            <div className="mt-5">
+              <HomeworkPanel lessonId={lesson.id} initial={homework} />
+            </div>
             <div className="mt-5">
               <StepToggle lessonId={lesson.id} step={LESSON_STEP_HOMEWORK} done={done.has(LESSON_STEP_HOMEWORK)} label="Домашка сделана" />
             </div>
