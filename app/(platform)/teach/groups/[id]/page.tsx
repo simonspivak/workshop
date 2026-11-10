@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ChartColumn, Images, Bot } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChartColumn, ClipboardCheck, Images, Bot } from "lucide-react";
 import { CreateStudents } from "./CreateStudents";
 import { GroupSettingsForm, PauseControl } from "./GroupSettings";
 import { StudentList } from "./StudentList";
@@ -79,6 +79,12 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
           icon={<Images aria-hidden="true" className="size-6 text-violet" />}
           title="Галерея группы"
           text="Все результаты учеников. Неподходящее можно скрыть."
+        />
+        <GroupSectionLink
+          href={`/teach/groups/${group.id}/homework`}
+          icon={<ClipboardCheck aria-hidden="true" className="size-6 text-violet" />}
+          title="Домашки"
+          text="Сдачи по урокам, оценки ИИ и ваша оценка с комментарием."
         />
         <GroupSectionLink
           href={`/teach/groups/${group.id}/bots`}
