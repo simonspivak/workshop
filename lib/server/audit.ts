@@ -26,7 +26,10 @@ export type AuditAction =
   | "bot.create"
   | "bot.update"
   | "bot.leads_export"
-  | "bot.telegram_retired";
+  | "bot.telegram_retired"
+  // домашки: оценка ИИ (пишет сервер после проверки) и оценка ведущего
+  | "homework.graded"
+  | "homework.teacher_grade";
 
 export async function audit(entry: {
   actorId: string | null;
