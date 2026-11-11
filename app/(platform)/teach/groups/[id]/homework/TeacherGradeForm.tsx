@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { gradeHomework, type GradeActionResult } from "./actions";
 import { SubmitButton } from "@/components/platform/SubmitButton";
@@ -25,6 +25,15 @@ export function TeacherGradeForm({
   // и выбранная оценка исчезала с экрана. Начальные значения — то, что уже сохранено.
   const [score, setScore] = useState(initial?.score ? String(initial.score) : "");
   const [comment, setComment] = useState(initial?.comment ?? "");
+  const scoreRef = useRef<HTMLSelectElement>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+  // После действия React делает form.reset(): у <select> нет «выбранного по умолчанию» пункта,
+  // и браузер показывает первый доступный («1»), хотя в состоянии и в базе — сохранённая оценка.
+  // Состояние не менялось, React DOM не трогает — возвращаем значения в поля сами.
+  useEffect(() => {
+    if (scoreRef.current) scoreRef.current.value = score;
+    if (commentRef.current) commentRef.current.value = comment;
+  }, [state, score, comment]);
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="submissionId" value={submissionId} />
@@ -34,6 +43,7 @@ export function TeacherGradeForm({
         </label>
         <div className="relative mt-1 max-w-40">
           <select
+            ref={scoreRef}
             id="teacher-score"
             name="score"
             value={score}
@@ -58,6 +68,7 @@ export function TeacherGradeForm({
           Комментарий <span className="font-normal text-ink-soft">(необязательно)</span>
         </label>
         <textarea
+          ref={commentRef}
           id="teacher-comment"
           name="comment"
           value={comment}
