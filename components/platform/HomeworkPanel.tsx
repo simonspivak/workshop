@@ -331,11 +331,14 @@ function HomeworkForm({
             value={note}
             onChange={(event) => setNote(event.target.value)}
             maxLength={MAX_HOMEWORK_NOTE}
-            rows={3}
+            rows={4}
             disabled={busy}
-            className={`${inputClass} mt-1 min-h-20 resize-y`}
-            placeholder="Что менялось от промпта к промпту и почему — ИИ учтёт это при проверке"
+            className={`${inputClass} mt-1 min-h-24 resize-y`}
+            placeholder="Что менялось от промпта к промпту и почему. Сюда же можно вставить переписку с ИИ целиком — ИИ учтёт это при проверке"
           />
+          <p className={`${hintClass} text-right`}>
+            {note.length.toLocaleString("ru-RU")} / {MAX_HOMEWORK_NOTE.toLocaleString("ru-RU")}
+          </p>
         </div>
       )}
 

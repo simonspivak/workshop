@@ -38,7 +38,10 @@ export type HomeworkView = {
 /** Лимит файла домашки — потолок бакета media (50 МБ). */
 export const MAX_HOMEWORK_BYTES = 50 * 1024 * 1024;
 export const MAX_HOMEWORK_TEXT = 20_000;
-export const MAX_HOMEWORK_NOTE = 2_000;
+/** Комментарий ученика: сюда помещается вся переписка с ИИ; в базе поле text_body ≤ 20 000. */
+export const MAX_HOMEWORK_NOTE = 20_000;
+/** Комментарий ведущего: в базе teacher_comment ≤ 2 000. */
+export const MAX_TEACHER_COMMENT = 2_000;
 export const MAX_HOMEWORK_LINK = 500;
 
 /** Расширения файлов, которые принимает домашка (тип определяется по расширению, не по браузеру). */

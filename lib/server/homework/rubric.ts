@@ -40,6 +40,20 @@ function stepsText(steps: LessonStepView[]): string {
   return steps.map((step, i) => `${i + 1}. ${step.text}`).join("\n");
 }
 
+/**
+ * Шлюз режет промпт до 20 000 знаков, и без бюджета длинный комментарий «съел» бы текст работы
+ * и формат ответа в конце промпта. Комментарий и текст делят WORK_BUDGET: комментарию — до NOTE_SHARE,
+ * тексту — остальное; обрезанное помечается, чтобы модель не считала работу оборванной.
+ */
+export const WORK_BUDGET = 16_000;
+export const NOTE_SHARE = 8_000;
+const CUT_MARK = "\n[…обрезано]";
+
+function clipTo(text: string, limit: number): { text: string; cut: boolean } {
+  if (text.length <= limit) return { text, cut: false };
+  return { text: text.slice(0, Math.max(0, limit - CUT_MARK.length)).trimEnd() + CUT_MARK, cut: true };
+}
+
 function describeWork(work: WorkForGrading): string {
   const lines: string[] = [];
   if (work.kind === "link") {
@@ -52,9 +66,12 @@ function describeWork(work: WorkForGrading): string {
   } else {
     lines.push("Ученик сдал текст.");
   }
-  if (work.note) lines.push(`Комментарий ученика:\n«««\n${work.note}\n»»»`);
+  const note = work.note ? clipTo(work.note, Math.min(NOTE_SHARE, WORK_BUDGET)) : null;
+  if (note) lines.push(`Комментарий ученика${note.cut ? " (обрезан, показано начало)" : ""}:\n«««\n${note.text}\n»»»`);
   if (work.text) {
-    lines.push(`${work.kind === "file" ? "Текст из файла" : "Текст работы"}${work.truncated ? " (обрезан, показано начало)" : ""}:\n«««\n${work.text}\n»»»`);
+    const text = clipTo(work.text, WORK_BUDGET - (note?.text.length ?? 0));
+    const cut = work.truncated || text.cut;
+    lines.push(`${work.kind === "file" ? "Текст из файла" : "Текст работы"}${cut ? " (обрезан, показано начало)" : ""}:\n«««\n${text.text}\n»»»`);
   } else if (work.kind !== "link") {
     lines.push("Текста в работе нет.");
   }
