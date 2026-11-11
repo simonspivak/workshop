@@ -34,6 +34,8 @@ export type WorkForGrading = {
   slides: number | null;
   pages: number | null;
   truncated: boolean;
+  /** файл есть, но текста в нём не нашлось (слайды-картинки, скан): модель оценивает по комментарию */
+  fileTextMissing?: boolean;
 };
 
 function stepsText(steps: LessonStepView[]): string {
@@ -68,7 +70,12 @@ function describeWork(work: WorkForGrading): string {
   }
   const note = work.note ? clipTo(work.note, Math.min(NOTE_SHARE, WORK_BUDGET)) : null;
   if (note) lines.push(`Комментарий ученика${note.cut ? " (обрезан, показано начало)" : ""}:\n«««\n${note.text}\n»»»`);
-  if (work.text) {
+  if (work.kind === "file" && work.fileTextMissing) {
+    lines.push(
+      "Текст из файла извлечь не удалось: скорее всего, слайды сохранены как картинки. Содержимое файла ты не видел — " +
+        "оцени только комментарий ученика и в summary прямо скажи, что файл не читался. Не выдумывай, что в файле.",
+    );
+  } else if (work.text) {
     const text = clipTo(work.text, WORK_BUDGET - (note?.text.length ?? 0));
     const cut = work.truncated || text.cut;
     lines.push(`${work.kind === "file" ? "Текст из файла" : "Текст работы"}${cut ? " (обрезан, показано начало)" : ""}:\n«««\n${text.text}\n»»»`);

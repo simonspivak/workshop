@@ -102,7 +102,11 @@ async function loadWork(row: HomeworkRow): Promise<Loaded> {
   const bytes = new Uint8Array(await data.arrayBuffer());
   const extracted = await extractHomeworkText(bytes, ext);
   if (!extracted) return { ok: false, error: "unreadable" };
-  if (!extracted.ok) return { ok: false, error: extracted.error };
+  if (!extracted.ok) {
+    // в файле нет текста (слайды-картинки, скан), но есть комментарий — проверяем по нему, модель предупреждена
+    if (extracted.error === "empty" && row.text_body?.trim()) return { ok: true, work: { ...base, note: row.text_body, fileTextMissing: true } };
+    return { ok: false, error: extracted.error };
+  }
   const { text, slides, pages, truncated } = extracted.content;
   return { ok: true, work: { ...base, text, note: row.text_body, slides, pages, truncated } };
 }

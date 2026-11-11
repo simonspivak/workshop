@@ -85,6 +85,8 @@ export type HomeworkErrorCode = keyof typeof homeworkErrorMessages;
 export const AI_SKIPS_MEDIA_NOTE = "ИИ пока не читает картинки, видео и звук — оценит ведущий.";
 export const AI_SKIPS_LARGE_NOTE = "Файл слишком большой для проверки ИИ — оценит ведущий.";
 export const AI_FAILED_NOTE = "ИИ не смог проверить работу — оценит ведущий.";
+export const AI_EMPTY_FILE_NOTE =
+  "В файле не нашлось текста: похоже, слайды сохранены как картинки. Оценит ведущий. Чтобы ИИ проверил, сдай заново и напиши в комментарии, что на слайдах.";
 
 /** Размер файла по-русски: «1,2 МБ», «340 КБ». */
 export function formatBytes(bytes: number): string {
