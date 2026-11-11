@@ -6,7 +6,7 @@ import { gradeHomework, type GradeActionResult } from "./actions";
 import { SubmitButton } from "@/components/platform/SubmitButton";
 import { Notice, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
-import { MAX_HOMEWORK_NOTE, homeworkErrorMessages } from "@/lib/platform/homework-types";
+import { MAX_TEACHER_COMMENT, homeworkErrorMessages } from "@/lib/platform/homework-types";
 
 function errorText(code: string): string {
   return code in homeworkErrorMessages ? homeworkErrorMessages[code as keyof typeof homeworkErrorMessages] : platformErrorMessage(code);
@@ -73,7 +73,7 @@ export function TeacherGradeForm({
           name="comment"
           value={comment}
           onChange={(e) => setComment(e.target.value)}
-          maxLength={MAX_HOMEWORK_NOTE}
+          maxLength={MAX_TEACHER_COMMENT}
           rows={4}
           className={`${inputClass} mt-1 min-h-24 resize-y`}
           placeholder="Что получилось, что доработать к защите"

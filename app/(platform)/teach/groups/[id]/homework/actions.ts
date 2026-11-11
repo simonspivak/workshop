@@ -5,14 +5,14 @@ import { z } from "zod";
 import { AuthError, authorize, STAFF_ROLES } from "@/lib/server/dal/auth";
 import { ConfigError } from "@/lib/server/env";
 import { setTeacherGrade } from "@/lib/server/homework/submissions";
-import { MAX_HOMEWORK_NOTE } from "@/lib/platform/homework-types";
+import { MAX_TEACHER_COMMENT } from "@/lib/platform/homework-types";
 
 export type GradeActionResult = { ok: true } | { ok: false; error: string };
 
 const schema = z.object({
   submissionId: z.uuid(),
   score: z.coerce.number().int().min(1).max(10),
-  comment: z.string().max(MAX_HOMEWORK_NOTE).transform((value) => value.trim()),
+  comment: z.string().max(MAX_TEACHER_COMMENT).transform((value) => value.trim()),
 });
 
 /** Оценка ведущего (1–10) и комментарий к сдаче. Только ведущий этой группы или админ; пишет audit_log. */
