@@ -14,6 +14,7 @@ import { json } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
 import {
+  AI_EMPTY_FILE_NOTE,
   AI_FAILED_NOTE,
   AI_SKIPS_LARGE_NOTE,
   AI_SKIPS_MEDIA_NOTE,
@@ -84,7 +85,7 @@ function feedbackOf(value: unknown): HomeworkAiFeedback | null {
 }
 
 function aiNote(row: HomeworkRow): string | null {
-  if (row.status === "failed") return AI_FAILED_NOTE;
+  if (row.status === "failed") return row.ai_error === "empty" ? AI_EMPTY_FILE_NOTE : AI_FAILED_NOTE;
   if (row.status === "submitted" && row.ai_error === "media") return AI_SKIPS_MEDIA_NOTE;
   if (row.status === "submitted" && row.ai_error === "too_large") return AI_SKIPS_LARGE_NOTE;
   return null;
