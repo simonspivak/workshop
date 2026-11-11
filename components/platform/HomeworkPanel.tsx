@@ -59,7 +59,13 @@ async function postJson<T>(url: string, body: unknown): Promise<T | null> {
 }
 
 /** PUT в подписанную ссылку Storage с прогрессом (fetch не умеет прогресс загрузки). */
-function uploadFile(url: string, file: File, contentType: string, apiKey: string | null, onProgress: (ratio: number) => void): Promise<boolean> {
+function uploadFile(
+  url: string,
+  file: File,
+  contentType: string,
+  apiKey: string | null,
+  onProgress: (ratio: number) => void,
+): Promise<"ok" | "rejected" | "failed"> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
@@ -69,9 +75,10 @@ function uploadFile(url: string, file: File, contentType: string, apiKey: string
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total);
     };
-    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
-    xhr.onerror = () => resolve(false);
-    xhr.ontimeout = () => resolve(false);
+    // 4xx — хранилище отказало (тип файла, размер, просроченная ссылка): повтор не поможет
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300 ? "ok" : xhr.status >= 400 && xhr.status < 500 ? "rejected" : "failed");
+    xhr.onerror = () => resolve("failed");
+    xhr.ontimeout = () => resolve("failed");
     xhr.send(file);
   });
 }
@@ -138,10 +145,10 @@ export function HomeworkPanel({ lessonId, initial }: { lessonId: string; initial
       const uploaded = await uploadFile(upload.url, input.file!, upload.contentType, upload.apiKey, (ratio) =>
         setPhase({ name: "uploading", ratio }),
       );
-      if (!uploaded) {
+      if (uploaded !== "ok") {
         await postJson(`/api/homework/${pending.id}/complete`, { abort: true });
         setPhase({ name: "idle" });
-        return setError(homeworkErrorMessages.upload_failed);
+        return setError(uploaded === "rejected" ? homeworkErrorMessages.upload_rejected : homeworkErrorMessages.upload_failed);
       }
       setPhase({ name: "grading" });
       const done = await postJson<StateBody>(`/api/homework/${pending.id}/complete`, {});

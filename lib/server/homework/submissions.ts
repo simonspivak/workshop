@@ -219,6 +219,9 @@ async function submissionsToday(userId: string): Promise<number> {
     .from("homework_submissions")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
+    // сорвавшиеся загрузки (строка так и осталась в uploading) лимит не тратят:
+    // иначе 20 неудачных попыток за день блокируют ученика сообщением «слишком много попыток»
+    .neq("status", "uploading")
     .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
   if (error) throw new Error(`homework.submissionsToday failed (${error.code})`);
   return count ?? 0;
