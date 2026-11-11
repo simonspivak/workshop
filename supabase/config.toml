@@ -31,7 +31,17 @@ file_size_limit = "50MiB"
 [storage.buckets.media]
 public = false
 file_size_limit = "50MiB"
-allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "video/mp4", "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/wave"]
+# Список применяется к проду при каждом деплое из main (интеграция Supabase с GitHub) и перекрывает ручные правки бакета.
+# Должен совпадать с FILE_TYPES в lib/server/homework/files.ts.
+allowed_mime_types = [
+  "image/png", "image/jpeg", "image/webp",
+  "video/mp4",
+  "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/wave",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain", "text/markdown",
+]
 
 [auth]
 enabled = true
