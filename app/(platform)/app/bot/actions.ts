@@ -240,6 +240,42 @@ export async function saveBot(_prev: BotActionResult | null, formData: FormData)
   }
 }
 
+// ---------- пауза владельцем ----------
+
+const pauseSchema = z.object({ paused: z.enum(["true", "false"]) });
+
+/** Поставить бота на паузу или снять с неё. На паузе гости получают короткий ответ без модели и звёзд. */
+export async function setBotPaused(_prev: BotActionResult | null, formData: FormData): Promise<BotActionResult> {
+  try {
+    const user = await authorize();
+    const bot = await myBot(user);
+    if (!bot) return botFail("bot_missing");
+    if (lifetimeOf(bot).retired) return botFail("bot_retired");
+    const parsed = pauseSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return botFail("invalid_input");
+    const paused = parsed.data.paused === "true";
+
+    const { error } = await createAdminClient()
+      .from("bots")
+      .update({ paused })
+      .eq("id", bot.id)
+      .eq("owner_id", user.id);
+    if (error) throw new Error(`pause bot failed (${error.code})`);
+
+    await audit({
+      actorId: user.id,
+      action: paused ? "bot.pause" : "bot.resume",
+      targetUser: user.id,
+      targetGroup: user.group?.id,
+      meta: { bot: bot.id },
+    });
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return botFailFromError(error, "setBotPaused");
+  }
+}
+
 // ---------- проверка в конструкторе (тот же мозг, звёзды владельца) ----------
 
 const previewSchema = z.object({

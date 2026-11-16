@@ -4,7 +4,7 @@ import { guardReply, guardText, guestBlockedText, hasPersonalData } from "@/lib/
 import { extractServiceLines, readCardScene, validateLead, type LeadData } from "@/lib/server/bot/leads";
 import { BOT_LIMITS } from "@/lib/server/bot/limits";
 import { buildConversationPrompt, buildSystemPrompt, leaksInstructions, sanitizeGuestText } from "@/lib/server/bot/prompt";
-import { rateLimitDecision, type RateLimitHit } from "@/lib/server/bot/ratelimit";
+import { rateLimitDecision, type RateLimitHit, type RateLimits } from "@/lib/server/bot/ratelimit";
 import { PREVIEW_PREFIX } from "@/lib/server/bot/secrets";
 import {
   HIDDEN_MESSAGE,
@@ -35,12 +35,15 @@ import { spendStars } from "@/lib/server/wallet";
   Мозг бота (docs/platform/spec.md §5). Один для веб-чата, проверки в конструкторе и Telegram.
 
   Порядок:
-    1. Срок жизни и «снят с публикации» → «бот переехал».
+    1. Срок жизни и «снят с публикации» → «бот переехал». Пауза владельца → короткий ответ гостю
+       (без записи, модели и звёзд; проверка владельцем работает).
     2. Модерация сообщения гостя (стоп-слова; у ботов 14–17 — без телефонов и e-mail).
-    3. Лимиты: 30 сообщений в час с IP/чата, 200 сообщений гостей в сутки на бота.
+    3. Лимиты: 30 сообщений в час от посетителя (сессия веб-гостя / чат Telegram), 600 в час из
+       одной сети (веб), 200 сообщений гостей в сутки на бота, общий потолок платформы в сутки.
     4. Сообщение сохраняется (в Telegram уникальный update_id отсекает повторы).
     5. Звёзды владельца: если кончились или группа на паузе — «бот отдыхает», модель не зовём.
-    6. Промпт: правила + характер + инструменты + знания + последние 10 сообщений → шлюз (claude-haiku-5-5).
+    6. Промпт: правила + характер + инструменты + знания + последние 10 сообщений → шлюз (claude-haiku-5-5),
+       не больше 2 попыток модели: публичный запрос не держится ~50 с, если шлюз сбоит.
     7. Списание 1★ с ключом идемпотентности входящего сообщения (повтор не списывает).
     8. Служебные строки [[ЗАЯВКА]] / [[ОТКРЫТКА]] вырезаются; заявка проверяется по форме и
        пишется в bot_leads (бот её прочитать не может). Ответ проверяется на утечку характера.
@@ -58,7 +61,7 @@ export type BrainResult =
       /** гость согласился на открытку: платформа покажет кнопку с ценой */
       card: { scene: string; stars: number } | null;
     }
-  | { status: "blocked" | "limited" | "resting" | "retired" | "duplicate" | "error"; text: string };
+  | { status: "blocked" | "limited" | "resting" | "paused" | "retired" | "duplicate" | "error"; text: string };
 
 export type BrainInput = {
   bot: BotRecord;
@@ -69,7 +72,7 @@ export type BrainInput = {
   text: string;
   /** ключ списания: bot:<botId>:<id сообщения> или tg:<botId>:<update_id> (8–100 символов) */
   chargeKey: string;
-  /** хеш IP или chat id (лимит в час); null — проверка владельцем */
+  /** хеш IP (веб: потолок сети в час) или chat id (Telegram); null — проверка владельцем */
   senderHash: string | null;
   telegramUpdateId?: number | null;
 };
@@ -77,7 +80,9 @@ export type BrainInput = {
 export const BOT_TEXTS = {
   retired: "Бот переехал: курс закончился, здесь он больше не отвечает.",
   resting: "Бот отдыхает и скоро вернётся.",
+  paused: "Бот сейчас на паузе и не отвечает. Загляните чуть позже!",
   limitedSender: "Слишком много сообщений подряд. Передохните и напишите через час.",
+  limitedNetwork: "Из этой сети сейчас слишком много сообщений. Попробуйте чуть позже.",
   limitedBot: "Бот сегодня уже много разговаривал и отдыхает до завтра.",
   error: "Что-то сломалось. Попробуйте ещё раз чуть позже.",
   neutral: "Давайте поговорим о чём-нибудь другом.",
@@ -110,6 +115,8 @@ export function cardsAvailable(bot: BotRecord, channel: BotChannel, preview: boo
 export async function acceptMessage(input: BrainInput): Promise<{ status: "accepted"; messageId: number } | BrainResult> {
   const { bot } = input;
   if (!bot.active || lifetimeOf(bot).retired) return { status: "retired", text: BOT_TEXTS.retired };
+  // Пауза владельца: гостю — короткий ответ, сообщение не пишем, модель не зовём, звёзды не тратим
+  if (bot.paused && !input.preview) return { status: "paused", text: BOT_TEXTS.paused };
 
   const text = input.text.trim();
   const guard = guardText(text, { allowContacts: isAdultOwner(bot.owner), maxLength: BOT_LIMITS.messageMax });
@@ -132,13 +139,22 @@ export async function acceptMessage(input: BrainInput): Promise<{ status: "accep
 
   const limited = (hit: RateLimitHit): BrainResult => ({
     status: "limited",
-    text: hit === "sender_hour" ? BOT_TEXTS.limitedSender : BOT_TEXTS.limitedBot,
+    text:
+      hit === "sender_hour"
+        ? BOT_TEXTS.limitedSender
+        : hit === "network_hour"
+          ? BOT_TEXTS.limitedNetwork
+          : BOT_TEXTS.limitedBot,
   });
+  // Потолок сети — только веб: в Telegram хеш отправителя и есть чат (посетитель)
+  const limits = guestLimits(input.channel);
+  const networkHash = input.channel === "web" ? input.senderHash : null;
 
   // Быстрая проверка без блокировок; окончательная — при записи (insert_bot_message)
   if (!input.preview) {
     const hit = rateLimitDecision(
-      await countRecent({ botId: bot.id, senderHash: input.senderHash, previewPrefix: PREVIEW_PREFIX }),
+      await countRecent({ botId: bot.id, conversationId: input.conversationId, networkHash, previewPrefix: PREVIEW_PREFIX }),
+      limits,
     );
     if (hit) return limited(hit);
   }
@@ -159,11 +175,20 @@ export async function acceptMessage(input: BrainInput): Promise<{ status: "accep
     senderHash: input.senderHash,
     telegramUpdateId: input.telegramUpdateId ?? null,
     dedupeKey: input.chargeKey,
-    limits: input.preview ? null : { senderPerHour: BOT_LIMITS.senderPerHour, botPerDay: BOT_LIMITS.botPerDay },
+    limits: input.preview ? null : limits,
   });
   if (stored === "duplicate") return { status: "duplicate", text: "" };
-  if (stored === "sender_hour" || stored === "bot_day") return limited(stored);
+  if (typeof stored === "string") return limited(stored);
   return { status: "accepted", messageId: stored.id };
+}
+
+/** Лимиты гостя для канала: потолок сети — только у веб-чата. */
+export function guestLimits(channel: BotChannel): RateLimits {
+  return {
+    senderPerHour: BOT_LIMITS.senderPerHour,
+    networkPerHour: channel === "web" ? BOT_LIMITS.networkPerHour : null,
+    botPerDay: BOT_LIMITS.botPerDay,
+  };
 }
 
 // ---------- шаг 5–8: ответить ----------
@@ -199,7 +224,10 @@ export async function completeMessage(input: BrainInput, messageId: number): Pro
     ? sanitizeGuestText(input.text)
     : buildConversationPrompt(bot.name, history.map(({ role, content }) => ({ role, content })), input.text);
 
-  const result = await generateText({ model: BOT_LIMITS.model, system, prompt, maxTokens: BOT_LIMITS.replyMaxTokens });
+  const result = await generateText(
+    { model: BOT_LIMITS.model, system, prompt, maxTokens: BOT_LIMITS.replyMaxTokens },
+    { maxAttempts: BOT_LIMITS.modelAttempts },
+  );
   if (!result.ok) {
     console.error("bot.brain: gateway failed", { bot: bot.id, error: result.error.slice(0, 80) });
     return { status: "error", text: BOT_TEXTS.error };

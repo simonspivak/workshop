@@ -27,6 +27,9 @@ export type AuditAction =
   | "bot.update"
   | "bot.leads_export"
   | "bot.telegram_retired"
+  // пауза бота владельцем (аудит 8 ноября, № 9)
+  | "bot.pause"
+  | "bot.resume"
   // домашки: оценка ИИ (пишет сервер после проверки) и оценка ведущего
   | "homework.graded"
   | "homework.teacher_grade";

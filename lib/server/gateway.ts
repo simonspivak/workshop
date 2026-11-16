@@ -220,13 +220,17 @@ async function withRetries<T extends { ok: true } | GatewayFailure>(
 }
 
 /** Синхронный текст (Claude Haiku по умолчанию). При перегрузке kie — повторы и запасная модель. */
-export async function generateText(request: Omit<TextRequest, "action">): Promise<TextResult> {
+export async function generateText(
+  request: Omit<TextRequest, "action">,
+  options: { maxAttempts?: number } = {},
+): Promise<TextResult> {
   const config = gatewayConfig();
   if (config.mode === "mock") return mockText(request);
   const primary = request.model ?? GATEWAY_MODELS.text[0];
   const models: ModelFor<"text">[] =
     primary === "claude-haiku-5-5" ? TEXT_CHAIN_FOR_HAIKU : [primary, primary, primary, primary, primary];
-  return withRetries<TextResult>(RETRY_BUDGET_MS.text, models.length, async (i, timeoutMs) => {
+  const attempts = Math.min(models.length, options.maxAttempts ?? models.length);
+  return withRetries<TextResult>(RETRY_BUDGET_MS.text, attempts, async (i, timeoutMs) => {
     const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs), false);
     if (!res.ok) return res;
     const body = res.body;

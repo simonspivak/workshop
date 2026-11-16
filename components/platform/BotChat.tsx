@@ -177,12 +177,31 @@ export function BotChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingKey, slug]);
 
+  // Проверка владельцем — Server Action; публичная страница — «Новый диалог»: сервер выдаёт новую
+  // cookie сессии, экран очищается (вместе с открытками, которые ещё рисуются: их опрос шёл по старой cookie)
+  async function resetPublic(): Promise<BotActionResult> {
+    try {
+      const response = await fetch(`/api/b/${slug}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "reset" }),
+      });
+      return (await response.json()) as BotActionResult;
+    } catch {
+      return { ok: false, error: "network", message: "Нет связи. Проверьте интернет и попробуйте ещё раз." };
+    }
+  }
+
+  const canReset = Boolean(resetAction) || mode === "public";
+
   function reset() {
-    if (!resetAction) return;
+    if (!canReset) return;
     startTransition(async () => {
-      const result = await resetAction();
-      if (result.ok) setMessages([]);
-      else setMessages((list) => [...list, { id: crypto.randomUUID(), role: "notice", text: result.message }]);
+      const result = await (resetAction ? resetAction() : resetPublic());
+      if (result.ok) {
+        setMessages([]);
+        setDraft("");
+      } else setMessages((list) => [...list, { id: crypto.randomUUID(), role: "notice", text: result.message }]);
     });
   }
 
@@ -194,14 +213,15 @@ export function BotChat({
           <p className="truncate font-display text-sm font-semibold">{botName}</p>
           <p className="font-mono text-xs text-ink-soft">{mode === "preview" ? "проверка · ваши звёзды" : "ИИ-персонаж"}</p>
         </div>
-        {resetAction && (
+        {canReset && (
           <button
             type="button"
             onClick={reset}
             disabled={pending}
+            title={mode === "public" ? "Начать разговор заново: прошлая переписка с этого устройства пропадёт с экрана" : undefined}
             className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink-soft hover:bg-lavender disabled:opacity-60"
           >
-            <RotateCcw aria-hidden="true" className="size-4" /> Заново
+            <RotateCcw aria-hidden="true" className="size-4" /> {mode === "public" ? "Новый диалог" : "Заново"}
           </button>
         )}
       </div>

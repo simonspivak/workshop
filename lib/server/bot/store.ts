@@ -1,6 +1,7 @@
 import "server-only";
 import { botLifetime, type BotLifetime } from "@/lib/server/bot/lifetime";
 import { BOT_LIMITS } from "@/lib/server/bot/limits";
+import type { RateLimitCounts, RateLimitHit, RateLimits } from "@/lib/server/bot/ratelimit";
 import { readTools, type BotTools } from "@/lib/server/bot/tools";
 import type { EncryptedSecret } from "@/lib/server/crypto";
 import { createAdminClient } from "@/lib/server/supabase/admin";
@@ -31,7 +32,10 @@ export type BotRecord = {
   knowledge: string;
   tools: BotTools;
   avatarJobId: string | null;
+  /** false — снят с публикации («бот переехал», Telegram отключается) */
   active: boolean;
+  /** пауза владельца: гостям — короткий ответ, без модели и звёзд; Telegram остаётся подключённым */
+  paused: boolean;
   createdAt: string;
   telegram: {
     botId: number | null;
@@ -45,7 +49,7 @@ export type BotRecord = {
 };
 
 const BOT_SELECT =
-  "id, owner_id, slug, name, soul, knowledge, tools, avatar_job_id, active, created_at, " +
+  "id, owner_id, slug, name, soul, knowledge, tools, avatar_job_id, active, paused, created_at, " +
   "telegram_bot_id, telegram_bot_username, telegram_token_ciphertext, telegram_token_iv, telegram_token_tag, " +
   "telegram_webhook_secret_hash, telegram_owner_chat_id, telegram_connected_at, " +
   "owner:profiles!bots_owner_id_fkey(id, role, age_band, parental_consent_at, disabled, nickname, " +
@@ -61,6 +65,7 @@ type BotJoinRow = {
   tools: Json;
   avatar_job_id: string | null;
   active: boolean;
+  paused: boolean;
   created_at: string;
   telegram_bot_id: number | null;
   telegram_bot_username: string | null;
@@ -97,6 +102,7 @@ function toRecord(row: BotJoinRow): BotRecord | null {
     tools: readTools(row.tools),
     avatarJobId: row.avatar_job_id,
     active: row.active,
+    paused: row.paused,
     createdAt: row.created_at,
     telegram: {
       botId: row.telegram_bot_id,
@@ -177,7 +183,7 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const since = (ms: number) => new Date(Date.now() - ms).toISOString();
 
-export type InsertMessageResult = { id: number } | "duplicate" | "sender_hour" | "bot_day";
+export type InsertMessageResult = { id: number } | "duplicate" | RateLimitHit;
 
 export type MessageRow = {
   botId: string;
@@ -190,17 +196,20 @@ export type MessageRow = {
   stars?: number;
   /** ключ входящего сообщения (bot:<бот>:<id> или tg:<бот>:<update_id>): повтор не записывается */
   dedupeKey?: string | null;
-  /** лимиты гостя: проверяются и пишутся одной транзакцией (insert_bot_message) */
-  limits?: { senderPerHour: number; botPerDay: number } | null;
+  /**
+   * лимиты гостя: проверяются и пишутся одной транзакцией (insert_bot_message).
+   * senderPerHour — по conversationId (посетитель), networkPerHour — по senderHash (сеть, null — не проверять).
+   */
+  limits?: RateLimits | null;
 };
 
 /**
  * Сохранить сообщение. 'duplicate' — повтор того же сообщения (update_id Telegram или dedupeKey);
- * 'sender_hour' / 'bot_day' — сообщение гостя сверх лимита, оно не записано.
+ * 'sender_hour' / 'network_hour' / 'bot_day' / 'global_day' — сообщение гостя сверх лимита, оно не записано.
  * Лимиты и запись — одна SQL-функция под блокировкой: параллельные запросы не проходят лимит все сразу.
  */
 export async function insertMessage(row: MessageRow): Promise<InsertMessageResult> {
-  const { data, error } = await createAdminClient().rpc("insert_bot_message", {
+  const args = {
     p_bot: row.botId,
     p_channel: row.channel,
     p_conversation_id: row.conversationId,
@@ -210,16 +219,25 @@ export async function insertMessage(row: MessageRow): Promise<InsertMessageResul
     p_telegram_update_id: row.telegramUpdateId ?? null,
     p_stars: row.stars ?? 0,
     p_dedupe_key: row.dedupeKey ?? null,
-    p_sender_per_hour: row.limits && row.senderHash ? row.limits.senderPerHour : null,
+    p_sender_per_hour: row.limits ? row.limits.senderPerHour : null,
     p_bot_per_day: row.limits ? row.limits.botPerDay : null,
-  });
+  };
+  const networkPerHour = row.limits && row.senderHash ? row.limits.networkPerHour : null;
+  const db = createAdminClient();
+  let { data, error } = await db.rpc("insert_bot_message", { ...args, p_ip_per_hour: networkPerHour });
+  // Код вышел раньше миграции 20261116130000 (нет p_ip_per_hour): старая функция, лимит — по IP, как раньше
+  if (isMissingFunction(error)) ({ data, error } = await db.rpc("insert_bot_message", args));
   // Код вышел раньше миграции 20261105100000 (функции ещё нет): пишем по-старому
-  if (error && (error.code === "PGRST202" || error.code === "42883")) return insertMessageDirect(row);
+  if (isMissingFunction(error)) return insertMessageDirect(row);
   const result = data?.[0];
   if (error || !result) throw new Error(`bot.store.insertMessage failed (${error?.code})`);
   if (result.outcome === "accepted" && result.message_id != null) return { id: result.message_id };
-  if (result.outcome === "duplicate" || result.outcome === "sender_hour" || result.outcome === "bot_day") return result.outcome;
+  if (result.outcome !== "accepted") return result.outcome;
   throw new Error("bot.store.insertMessage: unexpected result");
+}
+
+function isMissingFunction(error: { code?: string } | null): boolean {
+  return error?.code === "PGRST202" || error?.code === "42883";
 }
 
 async function insertMessageDirect(row: MessageRow): Promise<{ id: number } | "duplicate"> {
@@ -267,22 +285,29 @@ export async function loadHistory(
     .map((m) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.created_at }));
 }
 
-/** Сколько сообщений гостей: с этого IP/чата за час (на все боты) и у бота за сутки (без проверки владельца). */
+/**
+ * Сколько сообщений гостей за час: от этого посетителя (conversation_id, на все боты) и из этой
+ * сети (хеш IP, на все боты; null — не считаем), и у бота за сутки (без проверки владельца).
+ */
 export async function countRecent(input: {
   botId: string;
-  senderHash: string | null;
+  conversationId: string | null;
+  networkHash: string | null;
   previewPrefix: string;
-}): Promise<{ senderLastHour: number | null; botLastDay: number }> {
+}): Promise<RateLimitCounts> {
   const db = createAdminClient();
-  const [sender, bot] = await Promise.all([
-    input.senderHash
+  const hourCount = (column: "conversation_id" | "ip_hash", value: string | null) =>
+    value
       ? db
           .from("bot_messages")
           .select("id", { count: "exact", head: true })
-          .eq("ip_hash", input.senderHash)
+          .eq(column, value)
           .eq("role", "user")
           .gte("created_at", since(HOUR_MS))
-      : Promise.resolve(null),
+      : Promise.resolve(null);
+  const [visitor, network, bot] = await Promise.all([
+    hourCount("conversation_id", input.conversationId),
+    hourCount("ip_hash", input.networkHash),
     db
       .from("bot_messages")
       .select("id", { count: "exact", head: true })
@@ -291,9 +316,14 @@ export async function countRecent(input: {
       .not("conversation_id", "like", `${input.previewPrefix}%`)
       .gte("created_at", since(DAY_MS)),
   ]);
-  if (sender?.error) throw new Error(`bot.store.countRecent sender failed (${sender.error.code})`);
+  if (visitor?.error) throw new Error(`bot.store.countRecent visitor failed (${visitor.error.code})`);
+  if (network?.error) throw new Error(`bot.store.countRecent network failed (${network.error.code})`);
   if (bot.error) throw new Error(`bot.store.countRecent bot failed (${bot.error.code})`);
-  return { senderLastHour: sender ? (sender.count ?? 0) : null, botLastDay: bot.count ?? 0 };
+  return {
+    visitorLastHour: visitor ? (visitor.count ?? 0) : null,
+    networkLastHour: network ? (network.count ?? 0) : null,
+    botLastDay: bot.count ?? 0,
+  };
 }
 
 export async function deleteConversation(botId: string, conversationId: string): Promise<void> {
