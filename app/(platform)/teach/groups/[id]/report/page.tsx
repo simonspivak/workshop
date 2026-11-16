@@ -7,8 +7,9 @@ import { Card, Container, PageTitle, Skeleton, Stars, buttonClass } from "@/comp
 import { requireStaff } from "@/lib/server/dal/auth";
 import { getGroup } from "@/lib/server/dal/teacher";
 import { getGroupReport, type GroupReport } from "@/lib/server/group-reports";
+import { PLATFORM_TIME_ZONE_CITY } from "@/lib/platform/time-zone";
 
-export const metadata: Metadata = { title: "Отчёт группы" };
+export const metadata: Metadata = { title: "Прогресс, тесты и звёзды" };
 
 // Запас по времени на большую группу (аудит № 15); суммы считает SQL, обычно это доли секунды
 export const maxDuration = 60;
@@ -36,7 +37,7 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         <ArrowLeft aria-hidden="true" className="size-4" /> Группа {group.code}
       </Link>
       <PageTitle eyebrow={`Группа ${group.code} · ${group.title}`} title="Прогресс, тесты и звёзды">
-        Отметки учеников по урокам, засчитанные тесты и траты. День считается по Берлину.
+        Отметки учеников по урокам, засчитанные тесты и траты. День считается по {PLATFORM_TIME_ZONE_CITY}.
       </PageTitle>
       <a href={`/teach/groups/${group.id}/report.csv`} download className={`${buttonClass("secondary", "sm")} mb-6`}>
         <Download aria-hidden="true" className="size-4" /> Скачать CSV
@@ -151,7 +152,7 @@ function SpendingTable({ report }: { report: GroupReport }) {
                 Всего
               </th>
               <th scope="col" className={th}>
-                Генераций
+                Списаний
               </th>
               <th scope="col" className={th}>
                 Возвратов

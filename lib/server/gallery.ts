@@ -10,6 +10,7 @@ import { lineText } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
 import type { Json } from "@/lib/server/supabase/types";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 import {
   jobActionLabels,
   type GalleryItem,
@@ -289,7 +290,7 @@ export async function deleteJob(user: SessionUser, jobId: string): Promise<{ ok:
 
 // ---------- файлы для референсов ----------
 
-const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "Europe/Berlin" });
+const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: PLATFORM_TIME_ZONE });
 
 /**
  * Готовые файлы, которые пользователь может подставить в генерацию: свои (последние 40)

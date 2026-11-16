@@ -102,7 +102,7 @@ export function CreateStudents({
             </label>
           </div>
           <FormError state={state} />
-          <SubmitButton pendingText="Создаём аккаунты…">Создать</SubmitButton>
+          <SubmitButton pendingText="Создаём аккаунты…">Добавить</SubmitButton>
         </form>
       </Card>
 

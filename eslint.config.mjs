@@ -5,6 +5,12 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // CSP кабинета разрешает inline-скрипты (без nonce, см. docs/platform/spec.md §8),
+  // поэтому сырой HTML в разметку не вставляем: ответы моделей — только текстом
+  {
+    files: ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
+    rules: { "react/no-danger": "error" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

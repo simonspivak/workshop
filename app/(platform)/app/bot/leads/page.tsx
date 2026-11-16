@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Download } from "lucide-react";
 import { getMyBotSummary, listMyLeads } from "@/lib/server/bot/dal";
 import { requireUser } from "@/lib/server/dal/auth";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 import { BotNav } from "@/components/platform/BotNav";
 import { Card, Container, Notice, PageTitle, Skeleton, buttonClass } from "@/components/platform/ui";
 
@@ -121,6 +122,6 @@ function formatDateTime(value: string): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Europe/Berlin",
+    timeZone: PLATFORM_TIME_ZONE,
   }).format(new Date(value));
 }

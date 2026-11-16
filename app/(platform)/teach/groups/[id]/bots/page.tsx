@@ -41,9 +41,9 @@ async function GroupBots({ params }: { params: Promise<{ id: string }> }) {
         href={`/teach/groups/${group.id}`}
         className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-violet hover:underline"
       >
-        <ArrowLeft aria-hidden="true" className="size-4" /> К группе
+        <ArrowLeft aria-hidden="true" className="size-4" /> Группа {group.code}
       </Link>
-      <PageTitle eyebrow={`Группа ${group.code}`} title="Боты группы">
+      <PageTitle eyebrow={`Группа ${group.code} · ${group.title}`} title="Боты группы">
         {lastDay
           ? `Боты учеников работают до ${formatDay(lastDay)} (последний урок + ${BOT_LIMITS.retireAfterDays} дней).`
           : "Дата последнего урока не задана: боты работают без срока."}

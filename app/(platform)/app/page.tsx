@@ -7,6 +7,7 @@ import { getStudentHome } from "@/lib/server/dal/student";
 import { listLessons } from "@/lib/server/course";
 import { listMyOpenJobs } from "@/lib/server/gallery";
 import { ledgerReasonLabels } from "@/lib/platform/messages";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 import { GenerateJobCard } from "@/components/platform/GenerateJobCard";
 import { Card, Container, Notice, PageTitle, Skeleton, Stars } from "@/components/platform/ui";
 
@@ -179,6 +180,6 @@ function formatDate(value: string): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Europe/Berlin",
+    timeZone: PLATFORM_TIME_ZONE,
   }).format(new Date(value));
 }

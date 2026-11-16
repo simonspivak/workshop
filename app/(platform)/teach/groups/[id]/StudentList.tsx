@@ -185,7 +185,7 @@ function GrantForm({ studentId }: { studentId: string }) {
       </div>
       <FormError state={state} />
       {state?.ok && <Notice tone="success">Готово. Баланс: {state.balance} ★</Notice>}
-      <SubmitButton size="sm">Начислить</SubmitButton>
+      <SubmitButton size="sm">Начислить / снять</SubmitButton>
     </form>
   );
 }

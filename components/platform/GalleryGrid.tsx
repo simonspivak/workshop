@@ -8,6 +8,7 @@ import { JobMedia, JobMeta, JobStatusLine } from "@/components/platform/Generate
 import { buttonClass } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import { jobActionLabels, type GalleryItem, type JobAction, type MediaFile } from "@/lib/platform/generation-types";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 
 export type HideResult = { ok: true } | { ok: false; error: string };
 export type HideAction = (prev: HideResult | null, formData: FormData) => Promise<HideResult>;
@@ -17,7 +18,7 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", {
   month: "short",
   hour: "2-digit",
   minute: "2-digit",
-  timeZone: "Europe/Berlin",
+  timeZone: PLATFORM_TIME_ZONE,
 });
 
 /**
