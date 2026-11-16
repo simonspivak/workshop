@@ -8,10 +8,12 @@ import { readZip, type ZipEntry } from "./zip";
     pdf  → unpdf (pdf.js без canvas, работает в Node и на Vercel);
     txt, md → как есть.
   Картинки, видео и звук модель не читает — такие работы ждут оценки ведущего.
-  Текст режется до MAX_EXTRACT_CHARS: модели хватает, а длинные работы не стоят лишних токенов.
+  Текст режется до MAX_EXTRACT_CHARS — с запасом над тем, что модель читает (по частям,
+  passes.ts: 10 частей по ~12 000 знаков), чтобы для очень длинного документа честно сказать
+  «прочитано N из M частей».
 */
 
-export const MAX_EXTRACT_CHARS = 15_000;
+export const MAX_EXTRACT_CHARS = 200_000;
 
 export type Extracted = {
   text: string;

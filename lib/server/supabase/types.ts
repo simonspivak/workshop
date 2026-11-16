@@ -201,6 +201,10 @@ type HomeworkSubmissionRow = Timestamps & {
   teacher_id: string | null;
   teacher_graded_at: string | null;
   superseded_at: string | null;
+  /** id задач (jobs) из галереи ученика, ≤ 20 */
+  attachments: Json | null;
+  /** проверка длинной работы по частям (passes.ts GradingState) */
+  grading_progress: Json | null;
 };
 
 type AuditRow = {

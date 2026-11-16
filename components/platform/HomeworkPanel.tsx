@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { CheckCircle2, CircleDashed, ExternalLink, FileText, Link2, LoaderCircle, Paperclip, RotateCcw, XCircle } from "lucide-react";
+import { HomeworkAttachmentGrid } from "@/components/platform/HomeworkAttachments";
+import { HomeworkGalleryPicker } from "@/components/platform/HomeworkGalleryPicker";
 import { Badge, Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import {
@@ -11,10 +13,12 @@ import {
   MAX_HOMEWORK_NOTE,
   MAX_HOMEWORK_TEXT,
   formatBytes,
+  gradingProgressText,
   homeworkErrorMessages,
   homeworkStatusLabels,
   type CriterionVerdict,
   type HomeworkAiFeedback,
+  type HomeworkAttachmentView,
   type HomeworkKind,
   type HomeworkView,
 } from "@/lib/platform/homework-types";
@@ -23,12 +27,17 @@ import {
   Сдача домашки в уроке (docs/platform/spec.md «Домашки»): файл, текст или ссылка.
   Файл уходит прямо в Storage по подписанной ссылке (как монтаж): POST /api/homework →
   PUT файла → POST /api/homework/[id]/complete. Текст и ссылка — одним POST.
+  К любой сдаче можно прикрепить свои результаты из галереи (до 20); «Текст» может быть
+  без текста, если результаты прикреплены.
   Ответ сервера уже содержит оценку ИИ; если проверка не успела за ~45 с, статус «проверяется»
-  и панель опрашивает GET /api/homework/[id] раз в 5 секунд.
+  и панель опрашивает GET /api/homework/[id]: следующий запрос — через 5 с после ответа
+  на предыдущий (каждый опрос продвигает проверку длинной работы на часть). Длинную работу
+  ИИ читает по частям (до 10 частей, каждая — до ~45 с), поэтому опрос идёт до POLL_FOR_MS;
+  ушёл со страницы и вернулся — опрос начнётся заново, проверка продолжится с той же части.
 */
 
 const POLL_MS = 5_000;
-const POLL_LIMIT = 36; // 3 минуты
+const POLL_FOR_MS = 15 * 60_000; // 10 частей по ~45 с и оценка — с запасом на медленные ответы
 const PREVIEW_CHARS = 600;
 
 type SaveBody =
@@ -38,9 +47,12 @@ type StateBody = { ok: true; homework: HomeworkView | null } | { ok: false; erro
 
 type Phase = { name: "idle" } | { name: "uploading"; ratio: number } | { name: "grading" };
 
+type SubmitInput = { kind: HomeworkKind; file: File | null; text: string; link: string; note: string; attachments: HomeworkAttachmentView[] };
+
 function errorText(code: string | null | undefined, field?: string): string {
   const text = code && code in homeworkErrorMessages ? homeworkErrorMessages[code as keyof typeof homeworkErrorMessages] : platformErrorMessage(code);
-  const where = field === "note" ? "в комментарии" : field === "text" ? "в тексте" : field === "fileName" ? "в имени файла" : "";
+  const where =
+    field === "note" ? "в комментарии" : field === "text" ? "в тексте" : field === "fileName" ? "в имени файла" : field === "attachments" ? "в галерее" : "";
   return where ? `${text} (${where})` : text;
 }
 
@@ -89,29 +101,44 @@ export function HomeworkPanel({ lessonId, initial }: { lessonId: string; initial
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const [error, setError] = useState<string | null>(null);
 
-  // опрос, пока ИИ проверяет
-  const polls = useRef(0);
+  // опрос, пока ИИ проверяет: по одному запросу за раз, следующий — через POLL_MS после ответа
+  const pollStart = useRef<number | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [stalled, setStalled] = useState(false);
   useEffect(() => {
-    if (!homework || homework.status !== "grading") return;
+    if (!homework || homework.status !== "grading" || stalled) return;
+    pollStart.current ??= Date.now();
     const id = homework.id;
-    const timer = setInterval(async () => {
-      if (++polls.current > POLL_LIMIT) {
-        clearInterval(timer);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (Date.now() - (pollStart.current ?? Date.now()) > POLL_FOR_MS) {
+        setStalled(true);
         return;
       }
       try {
         const response = await fetch(`/api/homework/${id}`, { cache: "no-store" });
         const body = (await response.json().catch(() => null)) as StateBody | null;
+        if (cancelled) return;
         if (body?.ok && body.homework) setHomework(body.homework);
+        else setRetry((n) => n + 1);
       } catch {
-        // сеть моргнула — следующий опрос
+        if (!cancelled) setRetry((n) => n + 1); // сеть моргнула — следующий опрос
       }
     }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [homework]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [homework, retry, stalled]);
+
+  const resumePolling = useCallback(() => {
+    pollStart.current = null;
+    setStalled(false);
+  }, []);
 
   const finish = useCallback((next: HomeworkView) => {
-    polls.current = 0;
+    pollStart.current = null;
+    setStalled(false);
     setHomework(next);
     setEditing(false);
     setPhase({ name: "idle" });
@@ -119,9 +146,15 @@ export function HomeworkPanel({ lessonId, initial }: { lessonId: string; initial
   }, []);
 
   const submit = useCallback(
-    async (input: { kind: HomeworkKind; file: File | null; text: string; link: string; note: string }) => {
+    async (input: SubmitInput) => {
       setError(null);
-      const payload: Record<string, unknown> = { lessonId, kind: input.kind, note: input.note || undefined };
+      if (input.text.length > MAX_HOMEWORK_TEXT || input.note.length > MAX_HOMEWORK_NOTE) return setError(homeworkErrorMessages.text_too_long);
+      const payload: Record<string, unknown> = {
+        lessonId,
+        kind: input.kind,
+        note: input.note || undefined,
+        attachments: input.attachments.length ? input.attachments.map((a) => a.jobId) : undefined,
+      };
       if (input.kind === "file") {
         if (!input.file) return setError("Выберите файл.");
         if (input.file.size > MAX_HOMEWORK_BYTES) return setError(homeworkErrorMessages.file_too_large);
@@ -172,7 +205,7 @@ export function HomeworkPanel({ lessonId, initial }: { lessonId: string; initial
       />
     );
   }
-  return <HomeworkResult homework={homework} onResubmit={() => setEditing(true)} />;
+  return <HomeworkResult homework={homework} onResubmit={() => setEditing(true)} stalled={stalled} onResume={resumePolling} />;
 }
 
 // ---------- форма ----------
@@ -192,7 +225,7 @@ function HomeworkForm({
 }: {
   phase: Phase;
   error: string | null;
-  onSubmit: (input: { kind: HomeworkKind; file: File | null; text: string; link: string; note: string }) => Promise<void>;
+  onSubmit: (input: SubmitInput) => Promise<void>;
   onCancel: (() => void) | null;
   resubmit: boolean;
 }) {
@@ -201,6 +234,7 @@ function HomeworkForm({
   const [text, setText] = useState("");
   const [link, setLink] = useState("");
   const [note, setNote] = useState("");
+  const [attachments, setAttachments] = useState<HomeworkAttachmentView[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const busy = phase.name !== "idle";
@@ -217,7 +251,7 @@ function HomeworkForm({
       className="rounded-2xl bg-paper p-4 ring-1 ring-ink/10 sm:p-5"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!busy) void onSubmit({ kind, file, text, link, note });
+        if (!busy) void onSubmit({ kind, file, text, link, note, attachments });
       }}
     >
       <h3 className="text-lg font-semibold">{resubmit ? "Сдать заново" : "Сдать домашку"}</h3>
@@ -289,15 +323,13 @@ function HomeworkForm({
             id="homework-text"
             value={text}
             onChange={(event) => setText(event.target.value)}
-            maxLength={MAX_HOMEWORK_TEXT}
             rows={8}
             disabled={busy}
+            aria-invalid={text.length > MAX_HOMEWORK_TEXT}
             className={`${inputClass} mt-1 min-h-40 resize-y font-mono text-sm`}
-            placeholder="Вставь переписку с ИИ, объяснение или тексты слайдов"
+            placeholder="Вставь переписку с ИИ целиком, объяснение или тексты слайдов. Если сдаёшь только результаты из галереи — напиши пару слов о них"
           />
-          <p className={hintClass}>
-            {text.length.toLocaleString("ru-RU")} / {MAX_HOMEWORK_TEXT.toLocaleString("ru-RU")}
-          </p>
+          <Counter length={text.length} max={MAX_HOMEWORK_TEXT} />
         </div>
       )}
 
@@ -330,17 +362,17 @@ function HomeworkForm({
             id="homework-note"
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            maxLength={MAX_HOMEWORK_NOTE}
             rows={4}
             disabled={busy}
+            aria-invalid={note.length > MAX_HOMEWORK_NOTE}
             className={`${inputClass} mt-1 min-h-24 resize-y`}
-            placeholder="Что менялось от промпта к промпту и почему. Сюда же можно вставить переписку с ИИ целиком — ИИ учтёт это при проверке"
+            placeholder="Что менялось от промпта к промпту и почему. Сюда же можно вставить переписку с ИИ целиком — ИИ прочитает её всю"
           />
-          <p className={`${hintClass} text-right`}>
-            {note.length.toLocaleString("ru-RU")} / {MAX_HOMEWORK_NOTE.toLocaleString("ru-RU")}
-          </p>
+          <Counter length={note.length} max={MAX_HOMEWORK_NOTE} />
         </div>
       )}
+
+      <HomeworkGalleryPicker value={attachments} onChange={setAttachments} disabled={busy} />
 
       {error && (
         <Notice tone="error" className="mt-4">
@@ -367,9 +399,20 @@ function HomeworkForm({
             Отмена
           </button>
         )}
-        {phase.name === "grading" && <span className="text-sm text-ink-soft">Обычно до минуты.</span>}
+        {phase.name === "grading" && <span className="text-sm text-ink-soft">Обычно до минуты, длинную работу — дольше.</span>}
       </div>
     </form>
+  );
+}
+
+/** Счётчик знаков; длиннее лимита — красный и подсказка (текст не обрезается молча). */
+function Counter({ length, max }: { length: number; max: number }) {
+  const over = length > max;
+  return (
+    <p className={`${hintClass} text-right ${over ? "font-semibold text-coral-deep" : ""}`} aria-live={over ? "polite" : undefined}>
+      {length.toLocaleString("ru-RU")} / {max.toLocaleString("ru-RU")}
+      {over && " — слишком длинно: сократи или сдай файлом"}
+    </p>
   );
 }
 
@@ -388,7 +431,17 @@ function statusTone(status: HomeworkView["status"]): "neutral" | "violet" | "sun
   return "neutral";
 }
 
-export function HomeworkResult({ homework, onResubmit }: { homework: HomeworkView; onResubmit: (() => void) | null }) {
+export function HomeworkResult({
+  homework,
+  onResubmit,
+  stalled = false,
+  onResume,
+}: {
+  homework: HomeworkView;
+  onResubmit: (() => void) | null;
+  stalled?: boolean;
+  onResume?: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const text = homework.text ?? "";
   const long = text.length > PREVIEW_CHARS;
@@ -426,7 +479,7 @@ export function HomeworkResult({ homework, onResubmit }: { homework: HomeworkVie
             </a>
           </p>
         )}
-        {homework.kind === "text" && (
+        {homework.kind === "text" && text && (
           <div>
             <pre className="rounded-2xl bg-white p-3 font-mono text-sm leading-relaxed break-words whitespace-pre-wrap ring-1 ring-ink/10">
               {expanded || !long ? text : `${text.slice(0, PREVIEW_CHARS).trimEnd()}…`}
@@ -438,14 +491,27 @@ export function HomeworkResult({ homework, onResubmit }: { homework: HomeworkVie
             )}
           </div>
         )}
-        {homework.note && <p className="text-sm leading-relaxed whitespace-pre-line text-ink-soft">{homework.note}</p>}
+        {homework.note && <NotePreview note={homework.note} />}
+        <HomeworkAttachmentGrid items={homework.attachments} />
       </div>
 
-      {homework.status === "grading" && (
+      {homework.status === "grading" && !stalled && (
         <Notice className="mt-4">
-          <span className="inline-flex items-center gap-2">
-            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> ИИ проверяет работу. Обычно до минуты — страница обновится сама.
+          <span className="inline-flex items-center gap-2" aria-live="polite">
+            <LoaderCircle aria-hidden="true" className="size-4 shrink-0 animate-spin" />
+            {gradingProgressText(homework.progress)}
+            {homework.progress && homework.progress.total > 1 ? " — работа длинная, страница обновится сама." : " Обычно до минуты — страница обновится сама."}
           </span>
+        </Notice>
+      )}
+      {homework.status === "grading" && stalled && (
+        <Notice className="mt-4" tone="warn">
+          Проверка идёт дольше обычного. Можно уйти со страницы: когда вернёшься, она продолжится.{" "}
+          {onResume && (
+            <button type="button" onClick={onResume} className="font-semibold underline">
+              Проверить сейчас
+            </button>
+          )}
         </Notice>
       )}
       {homework.aiNote && (
@@ -470,6 +536,24 @@ export function HomeworkResult({ homework, onResubmit }: { homework: HomeworkVie
             <RotateCcw aria-hidden="true" className="size-4" /> Сдать заново
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Комментарий ученика: длинный (вставленная переписка) свёрнут, как текст работы. */
+function NotePreview({ note }: { note: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = note.length > PREVIEW_CHARS;
+  return (
+    <div>
+      <p className="text-sm leading-relaxed break-words whitespace-pre-line text-ink-soft">
+        {expanded || !long ? note : `${note.slice(0, PREVIEW_CHARS).trimEnd()}…`}
+      </p>
+      {long && (
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 text-sm font-semibold text-violet hover:underline">
+          {expanded ? "Свернуть" : "Показать всё"}
+        </button>
       )}
     </div>
   );

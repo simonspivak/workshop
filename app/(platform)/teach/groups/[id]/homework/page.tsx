@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Paperclip } from "lucide-react";
 import { Card, Container, PageTitle, Skeleton } from "@/components/platform/ui";
 import { listLessons } from "@/lib/server/course";
 import { requireStaff } from "@/lib/server/dal/auth";
@@ -52,7 +52,7 @@ async function GroupHomework({ params }: { params: Promise<{ id: string }> }) {
       ) : (
         <Card
           title="Ученики и уроки"
-          description="В клетке — оценка ИИ из 10; «ИИ 7 → 9» — ведущий поставил свою. «Ведущий» — ИИ не читает такой формат (картинка, видео, звук)."
+          description="В клетке — оценка ИИ из 10; «ИИ 7 → 9» — ведущий поставил свою. «Ведущий» — ИИ не читает такой формат (картинка, видео, звук). Скрепка с числом — сколько результатов из галереи прикреплено."
         >
           <div className="-mx-5 overflow-x-auto sm:-mx-6">
             <table className="w-full min-w-[36rem] border-collapse text-sm">
@@ -118,9 +118,21 @@ function cellText(cell: HomeworkCell): { text: string; tone: string } {
 
 function CellChip({ cell, href }: { cell: HomeworkCell; href: string }) {
   const { text, tone } = cellText(cell);
+  const attached = cell.attachmentCount > 0 ? `, из галереи: ${cell.attachmentCount}` : "";
   return (
-    <Link href={href} className={`inline-flex items-center rounded-full px-2.5 py-1 font-mono text-xs font-medium whitespace-nowrap hover:ring-2 hover:ring-violet ${tone}`}>
+    <Link
+      href={href}
+      title={`Открыть работу${attached}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-xs font-medium whitespace-nowrap hover:ring-2 hover:ring-violet ${tone}`}
+    >
       {text}
+      {cell.attachmentCount > 0 && (
+        <span className="inline-flex items-center gap-0.5 opacity-80">
+          <Paperclip aria-hidden="true" className="size-3" />
+          {cell.attachmentCount}
+          <span className="sr-only"> из галереи</span>
+        </span>
+      )}
     </Link>
   );
 }

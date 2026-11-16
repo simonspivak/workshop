@@ -4,13 +4,14 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ArrowLeft, ExternalLink, Link2, Paperclip } from "lucide-react";
 import { TeacherGradeForm } from "../TeacherGradeForm";
+import { HomeworkAttachmentGrid } from "@/components/platform/HomeworkAttachments";
 import { AiGrade } from "@/components/platform/HomeworkPanel";
 import { Badge, Card, Container, Notice, PageTitle, Skeleton } from "@/components/platform/ui";
 import { getLessonById } from "@/lib/server/course";
 import { requireStaff } from "@/lib/server/dal/auth";
 import { getGroup, isUuid } from "@/lib/server/dal/teacher";
 import { getHomeworkForTeacher } from "@/lib/server/homework/submissions";
-import { formatBytes, homeworkKindLabels, homeworkStatusLabels } from "@/lib/platform/homework-types";
+import { formatBytes, gradingProgressText, homeworkKindLabels, homeworkStatusLabels } from "@/lib/platform/homework-types";
 import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 
 export const metadata: Metadata = { title: "Домашка ученика" };
@@ -95,8 +96,18 @@ async function Detail({ params }: { params: Promise<{ id: string; sid: string }>
                 <p className="mt-1 leading-relaxed whitespace-pre-line">{homework.note}</p>
               </div>
             )}
+            {homework.attachments.length > 0 && (
+              <div className="mt-4">
+                <HomeworkAttachmentGrid items={homework.attachments} />
+                <p className="mt-2 text-sm text-ink-soft">ИИ видео и картинки не смотрит: он проверил число, тип, длину и промпты. Качество — за вами.</p>
+              </div>
+            )}
             {homework.aiNote && <Notice className="mt-4">{homework.aiNote}</Notice>}
-            {homework.status === "grading" && <Notice className="mt-4">ИИ ещё проверяет работу. Обновите страницу через минуту.</Notice>}
+            {homework.status === "grading" && (
+              <Notice className="mt-4">
+                {gradingProgressText(homework.progress)} — проверка идёт, пока у ученика открыт урок; обновите эту страницу позже.
+              </Notice>
+            )}
             {homework.ai && (
               <div className="mt-2">
                 <AiGrade score={homework.ai.score} feedback={homework.ai.feedback} />
