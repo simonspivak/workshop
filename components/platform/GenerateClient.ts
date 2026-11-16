@@ -2,14 +2,13 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { isActiveJobStatus, type JobAction, type JobView, type MediaKind } from "@/lib/platform/generation-types";
+import { CLIENT_MAX_POLLS, CLIENT_STOP_AFTER_REJECTS, clientFirstDelayMs, clientPollDelayMs } from "@/lib/platform/job-poll";
 
 /*
-  Браузерная часть генераций: запрос в /api/generate, опрос /api/jobs/[id] раз в 5 секунд
-  и «корзина референсов» — файлы, отмеченные в галерее кнопкой «Как референс».
+  Браузерная часть генераций: запрос в /api/generate, опрос /api/jobs/[id] по расписанию
+  lib/platform/job-poll.ts и «корзина референсов» — файлы, отмеченные в галерее кнопкой «Как референс».
   Корзина — удобство одного браузера (localStorage), сервер всё равно проверяет каждый путь.
 */
-
-export const POLL_MS = 5_000;
 
 export function newIdempotencyKey(): string {
   return crypto.randomUUID();
@@ -59,56 +58,123 @@ export async function postGenerate(body: Record<string, unknown>): Promise<Gener
   };
 }
 
-export async function fetchJob(id: string): Promise<JobView | null> {
+/** Ответ опроса: задача, отказ (401/403/404 — опрашивать дальше бессмысленно) или сбой (5xx, сеть). */
+export type FetchJobResult = { kind: "job"; job: JobView } | { kind: "rejected"; status: number } | { kind: "error" };
+
+export async function fetchJob(id: string): Promise<FetchJobResult> {
   try {
     const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { cache: "no-store" });
-    if (!response.ok) return null;
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      return { kind: "rejected", status: response.status };
+    }
+    if (!response.ok) return { kind: "error" };
     const data = (await response.json()) as { job?: JobView };
-    return data.job ?? null;
+    return data.job ? { kind: "job", job: data.job } : { kind: "error" };
   } catch {
-    return null;
+    return { kind: "error" };
   }
 }
 
+/** Почему карточка перестала опрашивать сервер: потолок запросов, сессия закончилась, задачи нет. */
+export type LivePollStop = "ceiling" | "session" | "gone";
+export type LiveJob = { job: JobView; stopped: LivePollStop | null; refresh: () => void };
+
+// Незавершённые карточки на странице: чем их больше, тем реже опрашивает каждая (crowdFactor)
+let livePollers = 0;
+
+const ageOf = (job: JobView) => Math.max(0, Date.now() - Date.parse(job.createdAt));
+
 /**
- * Живое состояние задачи: пока она не готова, спрашиваем сервер раз в 5 секунд
- * (во вкладке в фоне — пропускаем тики). onSettled — когда задача стала done или failed.
+ * Живое состояние задачи. Пока она не готова, спрашиваем сервер по расписанию
+ * lib/platform/job-poll.ts: пауза растёт с возрастом задачи, у видео и музыки она длиннее,
+ * со случайным разбросом. Во вкладке в фоне опрос стоит, при возвращении — сразу проверка.
+ * После CLIENT_MAX_POLLS запросов или отказа сервера опрос останавливается (stopped),
+ * refresh() запускает его заново. onSettled — когда задача стала done или failed.
  */
-export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void): JobView {
+export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void): LiveJob {
   const [job, setJob] = useState(initial);
+  const [stopped, setStopped] = useState<LivePollStop | null>(null);
+  const [run, setRun] = useState(0);
   const settledRef = useRef(onSettled);
+  const jobRef = useRef(initial);
   useEffect(() => {
     settledRef.current = onSettled;
   }, [onSettled]);
 
   const active = isActiveJobStatus(job.status);
+  const polling = active && stopped === null;
   useEffect(() => {
-    if (!active) return;
+    if (!polling) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = 0;
+    let errors = 0;
+    let rejects = 0;
+    livePollers++;
+
+    const schedule = (delay: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(tick, delay);
+    };
+    const stop = (reason: LivePollStop) => {
+      cancelled = true;
+      setStopped(reason);
+    };
+    async function tick() {
+      timer = undefined;
       if (cancelled) return;
-      if (document.visibilityState === "visible") {
-        const next = await fetchJob(job.id);
-        if (cancelled) return;
-        if (next) {
-          setJob(next);
-          if (!isActiveJobStatus(next.status)) {
-            settledRef.current?.(next);
-            return;
-          }
+      if (document.visibilityState !== "visible") return; // продолжит onVisible
+      if (polls >= CLIENT_MAX_POLLS) return stop("ceiling");
+      polls++;
+      const result = await fetchJob(jobRef.current.id);
+      if (cancelled) return;
+      if (result.kind === "rejected") {
+        if (++rejects >= CLIENT_STOP_AFTER_REJECTS) return stop(result.status === 404 ? "gone" : "session");
+      } else if (result.kind === "error") {
+        errors++;
+      } else {
+        errors = 0;
+        rejects = 0;
+        jobRef.current = result.job;
+        setJob(result.job);
+        if (!isActiveJobStatus(result.job.status)) {
+          settledRef.current?.(result.job);
+          return;
         }
       }
-      timer = setTimeout(tick, POLL_MS);
+      const current = jobRef.current;
+      schedule(
+        clientPollDelayMs({ action: current.action, status: current.status, ageMs: ageOf(current), errors, crowd: livePollers }),
+      );
+    }
+    const onVisible = () => {
+      // вернулись на вкладку: проверить почти сразу, но вразнобой с соседними карточками
+      if (document.visibilityState === "visible" && timer === undefined && !cancelled) {
+        schedule(300 + Math.random() * Math.min(livePollers, 24) * 250);
+      }
     };
-    timer = setTimeout(tick, initial.status === "queued" ? 1_500 : POLL_MS);
+
+    const current = jobRef.current;
+    schedule(clientFirstDelayMs({ action: current.action, status: current.status, ageMs: ageOf(current), crowd: livePollers }));
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      livePollers--;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [active, job.id, initial.status]);
+  }, [polling, run]);
 
-  return job;
+  const refresh = () => {
+    if (stopped === "session" || stopped === "gone") {
+      window.location.reload(); // сессию и права восстановит только перезагрузка (вход заново)
+      return;
+    }
+    setStopped(null);
+    setRun((n) => n + 1);
+  };
+
+  return { job, stopped, refresh };
 }
 
 // ---------- корзина референсов ----------

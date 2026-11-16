@@ -10,7 +10,7 @@ import type { JobAction, JobStatus } from "@/lib/server/supabase/types";
 
 const MINUTE = 60_000;
 
-export const GATEWAY_POLL_INTERVAL_SEC = 5;
+// Как часто спрашивать шлюз о статусе — lib/platform/job-poll.ts (gatewayPollIntervalSec)
 // Больше maxDuration /api/generate (60 с) с запасом: после конца запроса taskId уже никто не запишет
 // (mark_job_submitted — только из того же запроса), ждать дольше незачем (аудит № 20).
 export const QUEUED_WITHOUT_TASK_LIMIT_MS = 90_000;

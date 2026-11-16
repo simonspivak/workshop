@@ -4,7 +4,6 @@ import { isStaff, type SessionUser } from "@/lib/server/dal/auth";
 import { isUuid } from "@/lib/server/dal/teacher";
 import { downloadResult, getTaskStatus } from "@/lib/server/gateway";
 import {
-  GATEWAY_POLL_INTERVAL_SEC,
   decideFromGatewayStatus,
   isPastHardLimit,
   isQueuedWithoutTaskTooLong,
@@ -21,10 +20,12 @@ import { createAdminClient } from "@/lib/server/supabase/admin";
 import type { Database } from "@/lib/server/supabase/types";
 import { refundJob } from "@/lib/server/wallet";
 import type { JobView, MediaFile } from "@/lib/platform/generation-types";
+import { gatewayPollIntervalSec, isGatewayCheckDue } from "@/lib/platform/job-poll";
 
 /*
   Ленивый опрос задач (cron нет): GET /api/jobs/[id] вызывает advanceJob, тот по правилам из
-  job-rules.ts спрашивает шлюз (не чаще раза в 5 секунд на задачу), копирует готовый файл
+  job-rules.ts спрашивает шлюз (не чаще, чем разрешает gatewayPollIntervalSec для действия и
+  возраста задачи; раньше — ответ из базы без запуска n8n), копирует готовый файл
   в Storage или возвращает звёзды. Копирование идёт в after(): ответ опроса не ждёт скачивания.
 */
 
@@ -32,7 +33,8 @@ type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
 
 export const JOB_COLUMNS =
   "id, user_id, group_id, action, model, status, stars, prompt, result_text, storage_path, extra_paths, " +
-  "mime_type, error, hidden, deleted_at, gateway_task_id, lesson_id, task_ref, created_at, updated_at, submitted_at, completed_at";
+  "mime_type, error, hidden, deleted_at, gateway_task_id, lesson_id, task_ref, created_at, updated_at, submitted_at, completed_at, " +
+  "last_polled_at";
 
 export type JobRecord = Pick<
   JobRow,
@@ -58,6 +60,7 @@ export type JobRecord = Pick<
   | "updated_at"
   | "submitted_at"
   | "completed_at"
+  | "last_polled_at"
 >;
 
 export async function loadJob(jobId: string): Promise<JobRecord | null> {
@@ -128,7 +131,10 @@ export async function advanceJob(job: JobRecord): Promise<JobRecord> {
 
     case "submitted": {
       if (!job.gateway_task_id) return refundAndReload(job, refundReason("gateway_lost", "no task id"));
-      if (!(await claimJobPoll(job.id, GATEWAY_POLL_INTERVAL_SEC))) return job;
+      // Последняя проверка у шлюза была недавно — отвечаем из базы, запуск n8n не тратим
+      const interval = gatewayPollIntervalSec(job.action, now - Date.parse(job.submitted_at ?? job.created_at));
+      if (!isGatewayCheckDue(job.last_polled_at, interval, now)) return job;
+      if (!(await claimJobPoll(job.id, interval))) return job;
       const decision = decideFromGatewayStatus(timing, await getTaskStatus(job.gateway_task_id), now);
       return applyDecision(job, decision);
     }
