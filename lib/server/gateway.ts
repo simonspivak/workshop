@@ -293,7 +293,12 @@ async function withRetries<T extends { ok: true } | GatewayFailure>(
 
 /** Необязательные настройки вызова шлюза. clock — только для тестов. */
 export type GatewayCallOptions = { clock?: RetryClock };
-export type GenerateTextOptions = GatewayCallOptions;
+export type GenerateTextOptions = GatewayCallOptions & {
+  /** не больше стольких попыток (боты: публичный запрос не ждёт всю цепочку) */
+  maxAttempts?: number;
+  /** потолок ожидания одной попытки, мс (боты: гость не ждёт 40 с зависшей модели) */
+  attemptTimeoutMs?: number;
+};
 export type CreateTaskOptions = GatewayCallOptions & {
   /**
    * id задачи платформы: уходит в шлюз полем jobId, одинаковым во всех повторах этой задачи.
@@ -310,11 +315,12 @@ export async function generateText(request: Omit<TextRequest, "action">, options
   const primary = request.model ?? GATEWAY_MODELS.text[0];
   const models: ModelFor<"text">[] =
     primary === "claude-haiku-5-5" ? TEXT_CHAIN_FOR_HAIKU : [primary, primary, primary, primary, primary];
+  const attempts = Math.min(models.length, options.maxAttempts ?? models.length);
   return withRetries<TextResult>(
     RETRY_BUDGET_MS.text,
-    models.length,
+    attempts,
     async (i, timeoutMs) => {
-      const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs), false);
+      const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs, options.attemptTimeoutMs ?? TIMEOUT_MS.text), false);
       if (!res.ok) return res;
       const body = res.body;
       if (body.ok !== true || typeof body.text !== "string") return failure(body, res.status);

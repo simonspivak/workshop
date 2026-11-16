@@ -8,6 +8,7 @@ import {
   resetPreview,
   saveBot,
   sendPreviewMessage,
+  setBotPaused,
   startPreviewCard,
 } from "./actions";
 import { getMyBot, getPreviewHistory, listMyImages } from "@/lib/server/bot/dal";
@@ -20,6 +21,7 @@ import { BotChat } from "@/components/platform/BotChat";
 import { BotCopy } from "@/components/platform/BotCopy";
 import { BotCreateForm } from "@/components/platform/BotCreateForm";
 import { BotNav } from "@/components/platform/BotNav";
+import { BotPause } from "@/components/platform/BotPause";
 import { BotSettingsForm } from "@/components/platform/BotSettingsForm";
 import { BotTelegram } from "@/components/platform/BotTelegram";
 import { Card, Container, Notice, PageTitle, Skeleton } from "@/components/platform/ui";
@@ -83,6 +85,9 @@ async function BotConstructor() {
             переедет: характер и набор для переноса забирайте во вкладке «Забери с собой».
           </Notice>
         )}
+        {bot.active && bot.paused && (
+          <Notice tone="warn">Бот на паузе: гости получают «бот на паузе», звёзды не тратятся. Снять паузу — в карточке «Пауза».</Notice>
+        )}
         {!bot.active && (
           <Notice tone="warn">Ведущий снял бота с публикации: гости видят «бот переехал». Проверка ниже не работает.</Notice>
         )}
@@ -135,6 +140,12 @@ async function BotConstructor() {
           <Card title="Ссылка на бота" description="Её можно отправить в чат группы и открыть с телефона.">
             <BotCopy title="Адрес страницы" text={publicUrl} rows={1} />
           </Card>
+
+          {bot.active && (
+            <Card title="Пауза">
+              <BotPause paused={bot.paused} action={setBotPaused} />
+            </Card>
+          )}
 
           <Card title="Telegram">
             <BotTelegram

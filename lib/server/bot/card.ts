@@ -65,7 +65,7 @@ export async function startCard(input: {
   ticket: string;
 }): Promise<{ ok: true; jobId: string; stars: number } | { ok: false; error: CardError }> {
   const { bot } = input;
-  if (!bot.active || lifetimeOf(bot).retired || !cardsAvailable(bot, "web", input.preview)) {
+  if (!bot.active || (bot.paused && !input.preview) || lifetimeOf(bot).retired || !cardsAvailable(bot, "web", input.preview)) {
     return { ok: false, error: "card_unavailable" };
   }
   const scene = verifyCardTicket(input.ticket, { botId: bot.id, conversationId: input.conversationId });

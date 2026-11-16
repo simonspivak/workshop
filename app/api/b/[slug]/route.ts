@@ -16,8 +16,11 @@ import { ConfigError, isDevelopment } from "@/lib/server/env";
   POST /api/b/[slug] — веб-чат публичной страницы бота (без входа).
     { type: "message", text, messageId } → ответ бота (тот же мозг, 1★ со звёзд владельца)
     { type: "card", ticket }             → нарисовать открытку после подтверждения гостем
-  Защита: Origin этого сайта, тело до 8 КБ, лимиты 30 сообщений в час с IP и 200 в сутки на бота
-  (в мозге), сессия гостя — случайный id в httpOnly cookie. IP не хранится, только хеш с солью.
+    { type: "reset" }                    → «Новый диалог»: новая сессия гостя (новая cookie), история
+                                           на экране пустая; старая переписка этой cookie больше не видна
+  Защита: Origin этого сайта, тело до 8 КБ, лимиты (в мозге): 30 сообщений в час от посетителя
+  (сессия из cookie), 600 в час из одной сети (хеш IP), 200 в сутки на бота и общий потолок платформы.
+  Сессия гостя — случайный id в httpOnly cookie. IP не хранится, только хеш с солью.
 */
 
 export const maxDuration = 60;
@@ -25,7 +28,11 @@ export const maxDuration = 60;
 const bodySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message"), text: z.string().trim().min(1).max(BOT_LIMITS.messageMax), messageId: z.uuid() }),
   z.object({ type: z.literal("card"), ticket: z.string().min(10).max(2000) }),
+  z.object({ type: z.literal("reset") }),
 ]);
+
+const cookieOptions = () =>
+  ({ httpOnly: true, sameSite: "lax", secure: !isDevelopment(), path: "/", maxAge: 30 * 24 * 3600 }) as const;
 
 function fail(error: string, status: number) {
   return jsonResponse(botFail(error), status);
@@ -43,6 +50,13 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/b/[slug
     body = parsed.data;
   } catch (error) {
     return fail("invalid_input", error instanceof BodyError ? error.status : 400);
+  }
+
+  // «Новый диалог» (общий компьютер в классе): только новая cookie, в базе ничего не трогаем
+  if (body.type === "reset") {
+    const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+    response.cookies.set(BOT_SESSION_COOKIE, newSessionId(), cookieOptions());
+    return response;
   }
 
   const existing = request.cookies.get(BOT_SESSION_COOKIE)?.value;
@@ -63,7 +77,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/b/[slug
         preview: false,
         text: body.text,
         chargeKey: `bot:${bot.id}:${body.messageId}`,
-        // IPv6 — по сети /64: иначе лимит обходится сменой адреса
+        // Лимит посетителя — по conversationId (cookie); хеш IP — только потолок сети.
+        // IPv6 — по сети /64: иначе потолок обходится сменой адреса
         senderHash: hashSender("ip", ipRateLimitKey(ip)),
       });
       payload = toChatReply(result, { botId: bot.id, conversationId });
@@ -74,13 +89,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/b/[slug
 
     const response = NextResponse.json(payload, { headers: { "cache-control": "no-store" } });
     if (existing !== sessionId) {
-      response.cookies.set(BOT_SESSION_COOKIE, sessionId, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: !isDevelopment(),
-        path: "/",
-        maxAge: 30 * 24 * 3600,
-      });
+      response.cookies.set(BOT_SESSION_COOKIE, sessionId, cookieOptions());
     }
     return response;
   } catch (error) {
