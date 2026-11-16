@@ -8,6 +8,7 @@ import { Badge, Notice, buttonClass, hintClass, inputClass, labelClass } from "@
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import {
   HOMEWORK_ACCEPT,
+  HOMEWORK_FILE_HINT,
   MAX_HOMEWORK_BYTES,
   MAX_HOMEWORK_LINK,
   MAX_HOMEWORK_NOTE,
@@ -310,7 +311,7 @@ function HomeworkForm({
               {file ? "Другой файл" : "Выбрать файл"}
             </button>
           </div>
-          <p className={hintClass}>PDF, PPTX, DOCX, TXT, MD — проверит ИИ. PNG, JPG, WEBP, MP4, MP3, M4A, WAV — оценит ведущий. До 50 МБ.</p>
+          <p className={hintClass}>{HOMEWORK_FILE_HINT}</p>
         </div>
       )}
 

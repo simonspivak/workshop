@@ -59,6 +59,12 @@ export type TextRequest = {
   system?: string;
   /** ≤ 2000; по умолчанию 800 */
   maxTokens?: number;
+  /**
+   * Картинки для модели: https-ссылки (подписанные ссылки Storage), не больше MAX_TEXT_IMAGES.
+   * Пусто или нет — поля images в запросе к шлюзу нет, всё как раньше. Есть — цепочка моделей
+   * только из VISION_TEXT_MODELS (docs/kie-gateway.md, «Картинки в тексте»).
+   */
+  images?: string[];
 };
 export type ImageRequest = { action: "image"; model?: ModelFor<"image">; prompt: string; aspectRatio?: string };
 export type ImageEditRequest = {
@@ -150,6 +156,8 @@ export type GatewayFailure = {
    * Повторять такой запрос автоматически нельзя: kie может списать дважды.
    */
   uncertain?: boolean;
+  /** в запросе были картинки, и шлюз или модель отказали из-за них: повтор не поможет */
+  imagesRejected?: boolean;
 };
 
 export type TextResult = { ok: true; text: string; model?: string; credits: number | null } | GatewayFailure;
@@ -212,6 +220,37 @@ const UNCERTAIN_AFTER_MS = 30_000;
 // называют модель claude-haiku-5-5 — это «чат ученика», а сюда она переводится в цепочку.
 const TEXT_CHAIN_FOR_HAIKU: ModelFor<"text">[] = ["kimi-k3", "kimi-k3", "claude-haiku-5-5", "kimi-k3", "gpt-6-luna"];
 
+/*
+  Картинки в тексте (16 ноября 2026). По сохранённой документации kie картинки на входе принимают:
+    kimi-k3    — /openai/v1/responses, часть {"type":"input_image","image_url":"<URL или data:image/…;base64,…>"};
+    gpt-6-luna — /codex/v1/responses, та же часть input_image («Multimodal Input»).
+  У claude-haiku-5-5 и claude-sonnet-5-5 на kie content — «Structured content blocks» без описания
+  блоков: картинки не документированы, туда их не шлём. Список — только модели, где они документированы.
+*/
+export const VISION_TEXT_MODELS: readonly ModelFor<"text">[] = ["kimi-k3", "gpt-6-luna"];
+/** Больше стольких картинок в один текстовый запрос не уходит (шлюз проверяет то же). */
+export const MAX_TEXT_IMAGES = 6;
+const IMAGE_FAILURE_TEXT = /image|картин/i;
+
+/**
+ * Модели по попыткам. Без картинок — как раньше: цепочка для Haiku или одна модель 5 раз.
+ * С картинками — та же цепочка без моделей, у которых картинки не документированы; если
+ * в ней ничего не осталось (просили модель без картинок) — цепочка Haiku без них же.
+ */
+export function textChain(primary: ModelFor<"text">, withImages: boolean): ModelFor<"text">[] {
+  const base: ModelFor<"text">[] =
+    primary === "claude-haiku-5-5" ? TEXT_CHAIN_FOR_HAIKU : [primary, primary, primary, primary, primary];
+  if (!withImages) return base;
+  const vision = base.filter((model) => VISION_TEXT_MODELS.includes(model));
+  return vision.length ? vision : TEXT_CHAIN_FOR_HAIKU.filter((model) => VISION_TEXT_MODELS.includes(model));
+}
+
+/** Картинки для шлюза: только https, без повторов, не больше MAX_TEXT_IMAGES. */
+export function textImages(images: readonly string[] | undefined): string[] {
+  const ok = (images ?? []).filter((url) => typeof url === "string" && url.startsWith("https://") && url.length <= 2048);
+  return [...new Set(ok)].slice(0, MAX_TEXT_IMAGES);
+}
+
 export type FailureKind = "transient" | "rate_limited" | "permanent" | "final";
 
 /** Коды, при которых не пройдёт ни одна генерация: кредиты, ключ, доступ, адрес шлюза, техработы kie. */
@@ -229,6 +268,7 @@ function failureCode(result: GatewayFailure): number {
 }
 
 export function failureKind(result: GatewayFailure): FailureKind {
+  if (result.imagesRejected) return "permanent";
   if (result.uncertain || result.error === "gateway_timeout") return "final";
   if (result.error === "gateway_unreachable") return "transient";
   const code = failureCode(result);
@@ -321,17 +361,24 @@ export async function generateText(request: Omit<TextRequest, "action">, options
   if (config.mode === "mock") return mockText(request);
   const clock = options.clock ?? realClock;
   const primary = request.model ?? GATEWAY_MODELS.text[0];
-  const models: ModelFor<"text">[] =
-    primary === "claude-haiku-5-5" ? TEXT_CHAIN_FOR_HAIKU : [primary, primary, primary, primary, primary];
+  // поле images уходит в шлюз, только если картинки есть: чат, боты и проверка без картинок — как раньше
+  const { images: rawImages, ...rest } = request;
+  const images = textImages(rawImages);
+  const fields = images.length ? { ...rest, images } : rest;
+  const models = textChain(primary, images.length > 0);
   const attempts = Math.min(models.length, options.maxAttempts ?? models.length);
   return withRetries<TextResult>(
     RETRY_BUDGET_MS.text,
     attempts,
     async (i, timeoutMs) => {
-      const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs, options.attemptTimeoutMs ?? TIMEOUT_MS.text), false);
+      const res = await post(config, { action: "text", ...fields, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs, options.attemptTimeoutMs ?? TIMEOUT_MS.text), false);
       if (!res.ok) return res;
       const body = res.body;
-      if (body.ok !== true || typeof body.text !== "string") return failure(body, res.status);
+      if (body.ok !== true || typeof body.text !== "string") {
+        const failed = failure(body, res.status);
+        // «Cannot download image», отказ шлюза «images: …»: та же картинка не пройдёт и у другой модели
+        return images.length && IMAGE_FAILURE_TEXT.test(failed.error) ? { ...failed, imagesRejected: true } : failed;
+      }
       return { ok: true, text: body.text, model: str(body.model) ?? models[i], credits: num(body.credits) };
     },
     clock,

@@ -1,14 +1,17 @@
 import "server-only";
+import { AI_SEES_IMAGES, type HomeworkAttachmentView } from "@/lib/platform/homework-types";
 import { audit } from "@/lib/server/audit";
 import { getLessonById } from "@/lib/server/course";
 import { generateText } from "@/lib/server/gateway";
 import { MEDIA_BUCKET } from "@/lib/server/jobs";
+import { SIGNED_URL_TTL_SEC, signMediaPaths } from "@/lib/server/storage";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import type { Database, Json } from "@/lib/server/supabase/types";
 import { attachmentIds } from "./attachment-rules";
-import { attachmentsForGrading, loadAttachments } from "./attachments";
+import { attachmentsForGrading, loadAttachmentsForGrading } from "./attachments";
 import { extractHomeworkText } from "./extract";
 import { extOfPath, fileClass } from "./files";
+import { imagesFailedBefore, MAX_GRADING_IMAGE_BYTES, pickGradingImages, type GalleryImage, type GradingImage } from "./images";
 import {
   buildNotesPrompt,
   gradingMaterial,
@@ -38,9 +41,13 @@ import {
   Автоматическая проверка домашки (docs/platform/spec.md «Домашки»).
     submitted ──claim──▶ grading ──▶ graded (оценка 1–10, критерии, выжимка, советы)
                                  └──▶ failed (модель не ответила или вернула не JSON дважды)
-  Картинки, видео, звук и файлы больше MAX_EXTRACT_BYTES модель не читает: строка остаётся
+  Видео, звук и файлы больше MAX_EXTRACT_BYTES модель не читает: строка остаётся
   submitted с ai_error = media | too_large, оценивает ведущий. Исключение — к медиафайлу
   прикреплены результаты из галереи: тогда ИИ проверяет комментарий и набор результатов.
+  Картинки (AI_SEES_IMAGES): файл работы png/jpg/webp и картинки из галереи, до 6, уходят
+  модели свежими подписанными ссылками вместе с промптом — только в итоговый вызов оценки,
+  не в заметки по частям. Не вышло (шлюз или модель отказали, модель ответила images_seen: 0) —
+  как раньше: оценка только по тексту или, если кроме картинки ничего нет, — ведущий.
   Модель — цепочка generateText (Kimi → Haiku), звёзды ученика не тратятся: платит владелец.
   Захват строки (claim) — одним update со статусом и временем: два одновременных запроса
   (complete и опрос) не проверят работу дважды; зависшую проверку (> STALE_GRADING_SEC)
@@ -67,10 +74,23 @@ export const STEP_START_LIMIT_MS = 12_000;
 export type AiSkipCode = "media" | "too_large";
 export type AiFailCode = "unreadable" | "empty" | "gateway" | "bad_json" | "lesson_missing" | "download_failed" | "server_error";
 
-/** Модель может прочитать работу (текст, ссылка, документ подходящего размера, медиафайл с результатами из галереи). */
-export function aiCanRead(
-  row: Pick<HomeworkRow, "kind" | "storage_path" | "size_bytes"> & { attachments?: Json | null },
-): { ok: true } | { ok: false; skip: AiSkipCode } {
+type ReadableRow = Pick<HomeworkRow, "kind" | "storage_path" | "size_bytes"> & { attachments?: Json | null };
+
+/** Загруженный файл — картинка, которую можно показать модели. */
+function isImageUpload(row: ReadableRow): boolean {
+  const ext = extOfPath(row.storage_path);
+  return row.kind === "file" && ext !== null && fileClass(ext) === "image";
+}
+
+/** Модель может проверить работу: по тексту (aiCanReadText) или, если ИИ смотрит картинки, — картинку-файл. */
+export function aiCanRead(row: ReadableRow): { ok: true } | { ok: false; skip: AiSkipCode } {
+  const text = aiCanReadText(row);
+  if (text.ok || !AI_SEES_IMAGES || !isImageUpload(row)) return text;
+  return (row.size_bytes ?? 0) > MAX_GRADING_IMAGE_BYTES ? { ok: false, skip: "too_large" } : { ok: true };
+}
+
+/** Модель может проверить работу без картинок (текст, ссылка, документ подходящего размера, медиафайл с результатами из галереи). */
+export function aiCanReadText(row: ReadableRow): { ok: true } | { ok: false; skip: AiSkipCode } {
   if (row.kind !== "file") return { ok: true };
   const ext = extOfPath(row.storage_path);
   if (!ext || fileClass(ext) !== "document") {
@@ -119,8 +139,22 @@ async function claim(id: string): Promise<string | null> {
   return (data?.length ?? 0) > 0 ? claimedAt : null;
 }
 
-/** Записать прогресс по частям и продлить захват. null — захват перехватили (дальше не работаем). */
-async function saveProgress(id: string, claimedAt: string, state: GradingState): Promise<string | null> {
+/**
+ * Картинки не удались, а кроме картинки проверять нечего: строка возвращается в submitted
+ * с ai_error = media — оценивает ведущий (как до 16 ноября).
+ */
+async function backToTeacher(id: string, claimedAt: string): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("homework_submissions")
+    .update({ status: "submitted", ai_error: "media", grading_started_at: null, grading_progress: null })
+    .eq("id", id)
+    .eq("status", "grading")
+    .eq("grading_started_at", claimedAt);
+  if (error) console.error("homework.grade: back to teacher failed", { code: error.code });
+}
+
+/** Записать прогресс по частям (или отметку «без картинок») и продлить захват. null — захват перехватили (дальше не работаем). */
+async function saveProgress(id: string, claimedAt: string, state: GradingState | { noImages: true }): Promise<string | null> {
   const next = new Date().toISOString();
   const { data, error } = await createAdminClient()
     .from("homework_submissions")
@@ -175,24 +209,60 @@ async function loadWork(row: HomeworkRow): Promise<Loaded> {
   if (!extracted) return { ok: false, error: "unreadable" };
   if (!extracted.ok) {
     // в файле нет текста (слайды-картинки, скан), но есть комментарий — проверяем по нему, модель предупреждена
-    if (extracted.error === "empty" && row.text_body?.trim()) return { ok: true, work: { ...base, note: row.text_body, fileTextMissing: true } };
+    if (extracted.error === "empty" && row.text_body?.trim()) return { ok: true, work: { ...base, note: row.text_body, fileTextMissing: true, slidesTip: AI_SEES_IMAGES } };
     return { ok: false, error: extracted.error };
   }
   const { text, slides, pages, truncated } = extracted.content;
   return { ok: true, work: { ...base, text, note: row.text_body, slides, pages, truncated } };
 }
 
-/** Один промпт оценки: ответ модели → оценка (повтор, если не JSON). */
-async function gradeOnce(prompt: string): Promise<{ ok: true; parsed: ParsedGrade; model: string | null } | { ok: false; error: AiFailCode }> {
+type Vision = { work: WorkForGrading; urls: string[] };
+
+/** Картинки для модели: файл работы и картинки из галереи (≤ 6), подписанные свежими ссылками. */
+async function signGradingImages(row: HomeworkRow, gallery: GalleryImage[]): Promise<{ images: GradingImage[]; urls: string[] }> {
+  const upload = isImageUpload(row) && row.storage_path ? { path: row.storage_path, fileName: row.file_name } : null;
+  const picked = pickGradingImages(upload, gallery);
+  if (picked.length === 0) return { images: [], urls: [] };
+  // шлюзу — свежая ссылка на полный час, как у референсов генерации (storage.resolveReferences)
+  const signed = await signMediaPaths(
+    picked.map((image) => image.path),
+    SIGNED_URL_TTL_SEC,
+    { fresh: true },
+  );
+  const images = picked.filter((image) => signed.has(image.path));
+  return { images, urls: images.map((image) => signed.get(image.path) as string) };
+}
+
+/** Работа с картинками: подписи по порядку, номер картинки у результата из галереи, файл — картинка 1. */
+function withImages(work: WorkForGrading, views: HomeworkAttachmentView[], images: GradingImage[]): WorkForGrading {
+  const imageNo = new Map<string, number>();
+  images.forEach((image, i) => {
+    if (image.jobId) imageNo.set(image.jobId, i + 1);
+  });
+  const fileImage = images.length > 0 && images[0].jobId === null;
+  return {
+    ...work,
+    fileImage,
+    fileUnseen: Boolean(work.fileUnseen) && !fileImage,
+    images: images.map((image) => image.caption),
+    attachments: views.length ? attachmentsForGrading(views, imageNo) : work.attachments,
+  };
+}
+
+type GradeAnswer = { ok: true; parsed: ParsedGrade; model: string | null } | { ok: false; error: AiFailCode };
+
+/** Один промпт оценки: ответ модели → оценка (повтор, если не JSON). images — ссылки на картинки для модели. */
+async function gradeOnce(prompt: string, images: string[] = []): Promise<GradeAnswer> {
   let model: string | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await generateText({
       prompt: attempt === 0 ? prompt : prompt + RETRY_SUFFIX,
       system: GRADE_SYSTEM_PROMPT,
       maxTokens: GRADE_MAX_TOKENS,
+      ...(images.length ? { images } : {}),
     });
     if (!result.ok) {
-      console.error("homework.grade: gateway failed", { error: result.error.slice(0, 120), attempt });
+      console.error("homework.grade: gateway failed", { error: result.error.slice(0, 120), attempt, images: images.length });
       return { ok: false, error: "gateway" };
     }
     model = result.model ?? null;
@@ -202,10 +272,60 @@ async function gradeOnce(prompt: string): Promise<{ ok: true; parsed: ParsedGrad
   return { ok: false, error: "bad_json" };
 }
 
+type PassesDone = { read: number; all: number } | null;
+
 type GradeOutcome =
-  | { kind: "graded"; parsed: ParsedGrade; model: string | null; passes: { read: number; all: number } | null }
+  | {
+      kind: "graded";
+      parsed: ParsedGrade;
+      model: string | null;
+      passes: PassesDone;
+      /** сколько картинок ушло модели (0 — оценка без картинок) */
+      images: number;
+      /** вызов с картинками не удался, оценка — по тексту */
+      imagesFallback: boolean;
+    }
   | { kind: "failed"; error: AiFailCode }
-  | { kind: "paused" };
+  | { kind: "paused" }
+  | { kind: "teacher" };
+
+/**
+ * Итоговая оценка: сначала с картинками (если они есть), не вышло — по тексту, как раньше.
+ * «Не вышло» — шлюз или модель отказали, или модель ответила images_seen: 0 (шлюз картинки
+ * не передал). Без текста (только картинка) — ведущему. Мало времени на второй вызов —
+ * отметка noImages, строка отпущена, следующий опрос оценит по тексту.
+ */
+async function finalGrade(
+  row: HomeworkRow,
+  claimedAt: string,
+  prompts: { vision: string | null; text: string },
+  vision: Vision | null,
+  state: GradingState | null,
+  passes: PassesDone,
+  startedAt: number,
+): Promise<GradeOutcome> {
+  let fallback = imagesFailedBefore(state ?? row.grading_progress);
+  if (vision && prompts.vision) {
+    const graded = await gradeOnce(prompts.vision, vision.urls);
+    if (graded.ok && graded.parsed.imagesSeen !== 0) {
+      return { kind: "graded", parsed: graded.parsed, model: graded.model, passes, images: vision.urls.length, imagesFallback: false };
+    }
+    console.error("homework.grade: images not used, grading without them", { reason: graded.ok ? "images_seen_0" : graded.error });
+    if (!aiCanReadText(row).ok) {
+      await backToTeacher(row.id, claimedAt);
+      return { kind: "teacher" };
+    }
+    if (Date.now() - startedAt > STEP_START_LIMIT_MS) {
+      const saved = await saveProgress(row.id, claimedAt, state ? { ...state, noImages: true } : { noImages: true });
+      if (saved) await release(row.id, saved);
+      return { kind: "paused" };
+    }
+    fallback = true;
+  }
+  const graded = await gradeOnce(prompts.text);
+  if (!graded.ok) return { kind: "failed", error: graded.error };
+  return { kind: "graded", parsed: graded.parsed, model: graded.model, passes, images: 0, imagesFallback: fallback };
+}
 
 /**
  * Длинная работа: заметки по частям (с продолжением между опросами), потом оценка по заметкам.
@@ -216,6 +336,7 @@ async function gradeInPasses(
   claimedAt: string,
   lesson: RubricLesson,
   work: WorkForGrading,
+  vision: Vision | null,
   startedAt: number,
 ): Promise<GradeOutcome> {
   const plan = planPasses(gradingMaterial(work));
@@ -255,14 +376,22 @@ async function gradeInPasses(
     await release(row.id, claimTs);
     return { kind: "paused" };
   }
-  const graded = await gradeOnce(buildGradePromptFromNotes(lesson, work, state.notes, plan.all, plan.chars));
-  if (!graded.ok) return { kind: "failed", error: graded.error };
-  return {
-    kind: "graded",
-    parsed: honestSummary(graded.parsed, state.notes.length, plan.all),
-    model: graded.model,
-    passes: { read: state.notes.length, all: plan.all },
-  };
+  // картинки — только в итоговый вызов: заметки по частям идут без них
+  const useVision = vision && !state.noImages ? vision : null;
+  const outcome = await finalGrade(
+    row,
+    claimTs,
+    {
+      vision: useVision ? buildGradePromptFromNotes(lesson, useVision.work, state.notes, plan.all, plan.chars) : null,
+      text: buildGradePromptFromNotes(lesson, work, state.notes, plan.all, plan.chars),
+    },
+    useVision,
+    state,
+    { read: state.notes.length, all: plan.all },
+    startedAt,
+  );
+  if (outcome.kind !== "graded") return outcome;
+  return { ...outcome, parsed: honestSummary(outcome.parsed, state.notes.length, plan.all) };
 }
 
 /**
@@ -290,11 +419,16 @@ export async function gradeSubmission(id: string, options: { startedAt?: number 
   const lesson: RubricLesson = { n: lessonData.n, title: lessonData.title, homework: lessonData.homework };
 
   let loaded: Loaded;
+  let vision: Vision | null = null;
   try {
     loaded = await loadWork(row);
-    if (loaded.ok && attachmentIds(row.attachments).length) {
-      const views = await loadAttachments(row.user_id, row.attachments, { sign: false });
-      loaded = { ok: true, work: { ...loaded.work, attachments: attachmentsForGrading(views) } };
+    if (loaded.ok) {
+      const { views, images: gallery } = await loadAttachmentsForGrading(row.user_id, row.attachments);
+      if (views.length) loaded = { ok: true, work: { ...loaded.work, attachments: attachmentsForGrading(views) } };
+      if (AI_SEES_IMAGES && !imagesFailedBefore(row.grading_progress)) {
+        const signed = await signGradingImages(row, gallery);
+        if (signed.urls.length) vision = { work: withImages(loaded.work, views, signed.images), urls: signed.urls };
+      }
     }
   } catch (cause) {
     console.error("homework.grade: load work failed", { message: cause instanceof Error ? cause.message : String(cause) });
@@ -302,18 +436,20 @@ export async function gradeSubmission(id: string, options: { startedAt?: number 
   }
   if (!loaded.ok) return markFailed(id, loaded.error);
   const work = loaded.work;
+  // только картинка, а показать её модели нельзя (не подписалась, прошлый вызов не удался) — ведущему
+  if (!vision && !aiCanReadText(row).ok) return backToTeacher(id, claimedAt);
 
   let outcome: GradeOutcome;
-  if (fitsOnePrompt(lesson, work)) {
-    const graded = await gradeOnce(buildGradePrompt(lesson, work));
-    outcome = graded.ok ? { kind: "graded", parsed: graded.parsed, model: graded.model, passes: null } : { kind: "failed", error: graded.error };
+  if (fitsOnePrompt(lesson, vision?.work ?? work)) {
+    const prompts = { vision: vision ? buildGradePrompt(lesson, vision.work) : null, text: buildGradePrompt(lesson, work) };
+    outcome = await finalGrade(row, claimedAt, prompts, vision, null, null, startedAt);
   } else {
-    outcome = await gradeInPasses(row, claimedAt, lesson, work, startedAt);
+    outcome = await gradeInPasses(row, claimedAt, lesson, work, vision, startedAt);
   }
-  if (outcome.kind === "paused") return;
+  if (outcome.kind === "paused" || outcome.kind === "teacher") return;
   if (outcome.kind === "failed") return markFailed(id, outcome.error);
 
-  const { parsed, model, passes } = outcome;
+  const { parsed, model, passes, images, imagesFallback } = outcome;
   const { error: saveError } = await admin
     .from("homework_submissions")
     .update({
@@ -341,6 +477,8 @@ export async function gradeSubmission(id: string, options: { startedAt?: number 
       model,
       ...(passes ? { parts: passes.read, partsAll: passes.all } : {}),
       ...(work.attachments?.length ? { attachments: work.attachments.length } : {}),
+      ...(images ? { images } : {}),
+      ...(imagesFallback ? { imagesFallback: true } : {}),
     },
   });
 }

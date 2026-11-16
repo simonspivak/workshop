@@ -1,5 +1,6 @@
 import type { JobAction, JobStatus } from "@/lib/platform/generation-types";
-import { MAX_HOMEWORK_ATTACHMENTS } from "@/lib/platform/homework-types";
+import { MAX_HOMEWORK_ATTACHMENTS, type HomeworkAttachmentView } from "@/lib/platform/homework-types";
+import type { AttachmentForGrading } from "./rubric";
 
 /*
   Результаты из галереи в домашке: правила без базы и сети (юнит-тесты).
@@ -64,4 +65,19 @@ export function attachmentDuration(action: JobAction, params: unknown): number |
   const raw = action === "montage" ? p.durationSec : p.duration;
   const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
   return Number.isFinite(n) && n > 0 && n < 3600 ? n : null;
+}
+
+/**
+ * Метаданные для промпта проверки: тип, модель, длина и промпт. imageNo — под каким номером
+ * картинка этого результата приложена к сообщению (jobId → номер); видео модель не смотрит.
+ */
+export function attachmentsForGrading(views: HomeworkAttachmentView[], imageNo: ReadonlyMap<string, number> = new Map()): AttachmentForGrading[] {
+  return views.map((view) => ({
+    action: view.action,
+    model: view.model,
+    durationSec: view.durationSec,
+    prompt: view.prompt,
+    deleted: view.deleted,
+    ...(imageNo.has(view.jobId) ? { imageNo: imageNo.get(view.jobId) } : {}),
+  }));
 }

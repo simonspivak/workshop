@@ -175,6 +175,8 @@ export type GradingState = {
   all: number;
   notes: string[];
   failures: number;
+  /** итоговый вызов с картинками не удался: оценка — без картинок (grade.ts, images.ts) */
+  noImages?: true;
 };
 
 const stateSchema = z.object({
@@ -184,6 +186,7 @@ const stateSchema = z.object({
   all: z.number().int().min(1),
   notes: z.array(z.string().max(NOTES_MAX_CHARS)).max(MAX_CHUNKS),
   failures: z.number().int().min(0),
+  noImages: z.literal(true).optional(),
 });
 
 /** Прогресс из базы, если он про тот же материал; иначе — новый. */
@@ -192,7 +195,8 @@ export function resumeState(raw: unknown, plan: PassPlan): GradingState {
   if (parsed.success && parsed.data.chars === plan.chars && parsed.data.total === plan.chunks.length && parsed.data.all === plan.all) {
     return { ...parsed.data, notes: parsed.data.notes.slice(0, parsed.data.total) };
   }
-  return { v: 1, chars: plan.chars, total: plan.chunks.length, all: plan.all, notes: [], failures: 0 };
+  const noImages = Boolean(raw && typeof raw === "object" && (raw as { noImages?: unknown }).noImages === true);
+  return { v: 1, chars: plan.chars, total: plan.chunks.length, all: plan.all, notes: [], failures: 0, ...(noImages ? { noImages: true as const } : {}) };
 }
 
 /** Прогресс для браузера: «часть 3 из 7». null — проверка не по частям. */

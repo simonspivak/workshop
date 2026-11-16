@@ -8,6 +8,7 @@ import { listLessons } from "@/lib/server/course";
 import { requireStaff } from "@/lib/server/dal/auth";
 import { getGroup, listStudents } from "@/lib/server/dal/teacher";
 import { listGroupHomework, type HomeworkCell } from "@/lib/server/homework/submissions";
+import { TEACHER_TABLE_HINT } from "@/lib/platform/homework-types";
 
 export const metadata: Metadata = { title: "Домашки группы" };
 
@@ -52,7 +53,7 @@ async function GroupHomework({ params }: { params: Promise<{ id: string }> }) {
       ) : (
         <Card
           title="Ученики и уроки"
-          description="В клетке — оценка ИИ из 10; «ИИ 7 → 9» — ведущий поставил свою. «Ведущий» — ИИ не читает такой формат (картинка, видео, звук). Скрепка с числом — сколько результатов из галереи прикреплено."
+          description={TEACHER_TABLE_HINT}
         >
           <div className="-mx-5 overflow-x-auto sm:-mx-6">
             <table className="w-full min-w-[36rem] border-collapse text-sm">

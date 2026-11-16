@@ -14,10 +14,8 @@ import { json } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
 import {
-  AI_EMPTY_FILE_NOTE,
   AI_FAILED_NOTE,
   AI_SKIPS_LARGE_NOTE,
-  AI_SKIPS_MEDIA_NOTE,
   MAX_HOMEWORK_ATTACHMENTS,
   MAX_HOMEWORK_BYTES,
   MAX_HOMEWORK_LINK,
@@ -32,6 +30,7 @@ import { attachmentIds } from "./attachment-rules";
 import { loadAttachments, validateAttachments } from "./attachments";
 import { cleanFileName, extOfPath, headMatchesExt, homeworkExt, homeworkMime } from "./files";
 import { gradeSubmission, STALE_GRADING_SEC, type HomeworkRow } from "./grade";
+import { emptyFileNote, mediaSkipNote } from "./images";
 import { progressOf } from "./passes";
 
 /*
@@ -89,8 +88,8 @@ function feedbackOf(value: unknown): HomeworkAiFeedback | null {
 }
 
 function aiNote(row: HomeworkRow): string | null {
-  if (row.status === "failed") return row.ai_error === "empty" ? AI_EMPTY_FILE_NOTE : AI_FAILED_NOTE;
-  if (row.status === "submitted" && row.ai_error === "media") return AI_SKIPS_MEDIA_NOTE;
+  if (row.status === "failed") return row.ai_error === "empty" ? emptyFileNote() : AI_FAILED_NOTE;
+  if (row.status === "submitted" && row.ai_error === "media") return mediaSkipNote(row.storage_path);
   if (row.status === "submitted" && row.ai_error === "too_large") return AI_SKIPS_LARGE_NOTE;
   return null;
 }

@@ -169,13 +169,129 @@ HTTP-статус ответа остаётся **502** (как сейчас в 
 - Как kie ведёт себя для `nano-banana-pro`: страницы документации нет.
 - Повторы и тайм-аут вызова для моделей Market (известны только для Suno).
 
+## Картинки в тексте: `images` (16 ноября 2026)
+
+**Зачем.** Домашку проверяет текстовая модель. Картинки (постер, слайды PNG, кадры из галереи) она не видела. Из-за этого ИИ писал «не могу прочитать презентацию», а работы-картинки уходили ведущему. Теперь платформа может приложить к запросу `text` до 6 картинок.
+
+### Что сказано в документации kie (сохранённые страницы, 1 и 5 ноября 2026)
+
+| Модель | Адрес | Картинки на входе | Вид | Лимиты |
+|---|---|---|---|---|
+| `kimi-k3` | `POST /openai/v1/responses` (OpenAI Responses) | **есть**: «Image input — Mix text and images in a single message» | `input: [{ role: "user", content: [{ type: "input_text", text }, { type: "input_image", image_url }] }]`; `image_url` — «A publicly reachable URL, or a `data:image/{format};base64,{data}` string. The link must be directly downloadable, otherwise the request returns 400»; «Images are only allowed on `user` messages»; «Common formats such as PNG and JPEG are supported» | размер и число картинок не документированы |
+| `gpt-6-luna` | `POST /codex/v1/responses` (OpenAI Responses) | **есть**: «Multimodal Input — Supports mixed text, image, and file inputs in a single message» | content parts `{"type":"input_image","image_url":"<URL or data:image/...;base64,...>"}` (и `input_file` с `file_url`) | не документированы |
+| `claude-haiku-5-5` (и `claude-sonnet-5-5`) | `POST /claude/v1/messages` | **не документировано**: у `content` — `string` или «Structured content blocks» (`additionalProperties: true`) без описания блоков; примеров с картинкой нет | — | — |
+
+Ответ с картинками — тот же: у Responses `output[].content[]` с `output_text`, `usage.input_tokens` («including the prompt, instructions, history, images…»), `credits_consumed`. Цены картинки в токенах или кредитах в документации нет. Отказ Kimi при недоступной ссылке — `{"error": {"type": "server_error", "message": "Cannot download image [image-url] ..."}}`.
+
+Поэтому платформа (`lib/server/gateway.ts`, `VISION_TEXT_MODELS`) шлёт картинки только в `kimi-k3` и `gpt-6-luna`: с картинками цепочка — Kimi → Kimi → Kimi → GPT 6 Luna (Haiku пропускается). Без картинок цепочка прежняя.
+
+### Что присылает платформа
+
+```json
+{ "action": "text", "model": "kimi-k3", "prompt": "…", "system": "…", "maxTokens": 1200,
+  "images": ["https://<STORAGE_HOST>/storage/v1/object/sign/media/<путь>?token=…", "…"] }
+```
+
+- Поле `images` есть, **только когда картинки есть** (сейчас — только проверка домашки). Чат, боты и проверка без картинок шлют запрос как раньше, без поля.
+- Ссылки — подписанные ссылки Supabase Storage на бакет `media`, свежие, живут час. Только `https`, без повторов, не больше 6.
+- Порядок важен: в промпте написано «картинка 1 — файл работы, картинка 2 — результат из галереи…». Части `input_image` должны идти в том же порядке.
+
+### Что сделать в n8n (Сеня)
+
+«Build KIE Request» (узел с ключом) не трогаем. Он читает только известные поля, `images` для `text` молча пропускает: картинки до модели не доходят, но и ошибки нет. Всё делается в **«Доработке запроса»**.
+
+`<STORAGE_HOST>` — хост Supabase платформы (как в `NEXT_PUBLIC_SUPABASE_URL`, без `https://`). Вписать его в узел n8n. В репозиторий хост не класть.
+
+**1.** В начало узла, после строки `const body = …`, добавить:
+
+```js
+// 4) Картинки для текста (проверка домашки, 16 ноября 2026). body.images — до 6 подписанных ссылок
+//    на Storage платформы. Поля нет — ничего не меняется.
+const STORAGE_HOST = '<STORAGE_HOST>';
+const IMAGE_PREFIX = `https://${STORAGE_HOST}/storage/v1/object/sign/media/`;
+// Картинки на входе есть в документации kie только у этих моделей (OpenAI Responses)
+const VISION_TEXT = ['kimi-k3', 'gpt-6-luna'];
+// Claude Messages: блоки картинок у kie не документированы. Включать после живой проверки.
+const CLAUDE_IMAGES = false;
+const imagesFail = (error) => [{ json: { ok: false, httpStatus: 400, error } }];
+
+/** Проверить body.images: { list } или { error } (текст ошибки начинается с «images:»). */
+function textImages(model) {
+  if (body.images === undefined) return { list: [] };
+  const list = Array.isArray(body.images) ? body.images : null;
+  if (!list || list.length > 6) return { error: 'images: up to 6 links expected' };
+  if (list.some((u) => typeof u !== 'string' || u.length > 2048 || !u.startsWith(IMAGE_PREFIX))) {
+    return { error: 'images: only https links to platform storage' };
+  }
+  const claude = String(model).startsWith('claude-');
+  if (list.length && !VISION_TEXT.includes(model) && !(claude && CLAUDE_IMAGES)) {
+    return { error: `images: model ${model} does not take images` };
+  }
+  return { list };
+}
+
+/** Переписать готовое тело запроса: текст + картинки по порядку. Тело уже собрано Build (или веткой Kimi). */
+function withImages(payload, list) {
+  if (!list.length) return payload;
+  if (Array.isArray(payload.messages)) {
+    // Claude Messages (только при CLAUDE_IMAGES = true)
+    const text = String(payload.messages[0]?.content ?? '');
+    payload.messages = [{ role: 'user', content: [
+      { type: 'text', text },
+      ...list.map((url) => ({ type: 'image', source: { type: 'url', url } })),
+    ] }];
+  } else {
+    // OpenAI Responses (kimi-k3, gpt-6-luna): input-строка → одно сообщение user с частями
+    const text = String(payload.input ?? '');
+    payload.input = [{ role: 'user', content: [
+      { type: 'input_text', text },
+      ...list.map((url) => ({ type: 'input_image', image_url: url })),
+    ] }];
+  }
+  return payload;
+}
+```
+
+**2.** В ветке Kimi K3 (`EXTRA_TEXT`), вместо последней строки `return [{ json: { ok: true, route: 'text', … payload } }];`:
+
+```js
+  const imgs = textImages(body.model);
+  if (imgs.error) return imagesFail(imgs.error);
+  return [{ json: { ok: true, route: 'text', method: 'POST', url: EXTRA_TEXT[body.model], payload: withImages(payload, imgs.list) } }];
+```
+
+**3.** Сразу **после** блока `if (out.route === 'text' && body.system) { … }` (он пересобирает `messages` и `instructions`, поэтому картинки — после него):
+
+```js
+if (out.route === 'text') {
+  const imgs = textImages(out.payload.model);
+  if (imgs.error) return imagesFail(imgs.error);
+  withImages(out.payload, imgs.list);
+}
+```
+
+Проверка ключа не меняется: оба места выполняются, только когда Build уже проверил ключ (ветка Kimi — после ошибки «model … is not allowed», шаг 3 — при `out.ok === true`).
+
+### Что платформа ждёт в ответ
+
+- Ответ **тот же**, что без картинок: `{ ok: true, action: "text", model, text, credits, usage }`. «Normalize Response» менять не нужно: Responses отдаёт `output[].content[]` с `output_text`, Claude — `content[]`.
+- Отказ — как сейчас: `{ ok: false, httpStatus, error }`. Если в `error` есть слово `image` (свой отказ «images: …» или «Cannot download image» от kie), платформа не повторяет запрос другой моделью. Она проверяет работу **без картинок**, как раньше: по тексту или, если сдана только картинка, — ведущим. Сдача из-за картинок не падает.
+- Модель отвечает полем `images_seen` в JSON оценки. Пока шаги 1–3 не сделаны, шлюз картинки молча не передаёт. Ожидается, что модель тогда ответит `images_seen: 0`, и платформа оценит работу как раньше. Это поведение модели, живым запросом не проверено. Надёжнее сначала сделать шаги 1–3, потом выкатывать платформу. Выключатель на платформе — `AI_SEES_IMAGES` в `lib/platform/homework-types.ts`.
+
+### Что не проверено (до первого настоящего вызова)
+
+- Скачивает ли kie картинку по подписанной ссылке Supabase (ссылка с `?token=…`, `Content-Type` из бакета). Документация требует «publicly reachable», «directly downloadable». Подписанная ссылка публична на час.
+- Реальная цена картинки: в документации нет ни токенов, ни кредитов за картинку. Смотреть `usage.input_tokens` и `credits_consumed` в первых ответах.
+- Предел размера и числа картинок у kie: не документирован. Платформа шлёт не больше 6, загруженный файл — не больше 20 МБ.
+- Видит ли Haiku картинки через `/claude/v1/messages`. Поэтому `CLAUDE_IMAGES = false`, а платформа Claude картинки не шлёт.
+
 ## Действия и модели
 
 Первая модель в списке — по умолчанию. Другую можно выбрать полем `model`, но только из этого списка.
 
 | action | Модели | Обязательные поля | Необязательные |
 |---|---|---|---|
-| `text` | `claude-haiku-5-5`, `gpt-6-luna`, `claude-sonnet-5-5` | `prompt` | `system`, `maxTokens` (≤2000) |
+| `text` | `claude-haiku-5-5`, `gpt-6-luna`, `claude-sonnet-5-5` (и `kimi-k3` из «Доработки запроса») | `prompt` | `system`, `maxTokens` (≤2000); `images[]` — до 6 ссылок на картинки, только для `kimi-k3` и `gpt-6-luna` (раздел «Картинки в тексте») |
 | `image` | `nano-banana-2-1`, `flux-3/klein-text-to-image`, `nano-banana-pro` | `prompt` | `aspectRatio` |
 | `image_edit` | `nano-banana-2-1`, `flux-3/klein-edit-image`, `nano-banana-pro` | `prompt`, `images[]` | `aspectRatio` |
 | `video` | `bytedance/seedance-2-mini`, `bytedance/seedance-2-5`, `wan/3-0-video`, `wan/3-0-video-prime`, `kling-4.0/reference-to-video` | `prompt` | `images[]` (первый и последний кадр), `duration`, `aspectRatio`, `audio`, `resolution`; `reference: true` — картинки идут референсами, а не первым кадром, плюс `videos[]`, `audios[]` (Seedance и Wan 3.0; у Wan в промпте Image1/Video1/Audio1); для Seedance 2.5: `lastFrame: true` (вернуть последний кадр); для Kling 4.0: `videos[]`, `elements[]`, `voices[]` |
