@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { getQuizKey } from "@/lib/server/course";
-import { AuthError, authorize, isStaff } from "@/lib/server/dal/auth";
+import { AuthError, authorizeCourse, isStaff } from "@/lib/server/dal/auth";
 import { ConfigError } from "@/lib/server/env";
 import { isLessonStep, recordedQuizResult, setLessonStep } from "@/lib/server/lesson-progress";
 import { gradeQuiz } from "@/lib/server/quiz";
@@ -14,7 +14,7 @@ import type { GenerationErrorCode } from "@/lib/platform/generation-messages";
 import type { ErrorCode } from "@/lib/platform/messages";
 
 /*
-  Действия урока. Каждое само проверяет вход (authorize) и валидирует ввод.
+  Действия урока. Каждое само проверяет вход и группу ученика (authorizeCourse) и валидирует ввод.
   submitQuiz проверяет ответы на сервере: правильные ответы в браузер не уходят,
   объяснения возвращаются только после отправки. Одна засчитанная попытка на урок,
   +20★ за ≥ 8 из 10 (record_quiz_attempt, через журнал звёзд). Ведущий проходит тест
@@ -37,7 +37,7 @@ function fail(error: unknown, op: string): Failure {
 
 export async function submitQuiz(_prev: QuizActionResult | null, formData: FormData): Promise<QuizActionResult> {
   try {
-    const user = await authorize();
+    const user = await authorizeCourse();
     const lessonId = lessonIdSchema.safeParse(formData.get("lessonId"));
     const key = lessonId.success ? getQuizKey(lessonId.data) : null;
     if (!lessonId.success || !key) return { ok: false, error: "lesson_not_found" };
@@ -95,7 +95,7 @@ const stepSchema = z.object({
 /** Отметить шаг урока (теория, задание, домашка) или снять отметку. */
 export async function toggleLessonStep(_prev: StepActionResult | null, formData: FormData): Promise<StepActionResult> {
   try {
-    const user = await authorize();
+    const user = await authorizeCourse();
     const parsed = stepSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { ok: false, error: "invalid_input" };
     const { lessonId, step, done } = parsed.data;

@@ -143,6 +143,10 @@ function QuizResult({
         )}
       </div>
 
+      {result.keyChanged && (
+        <Notice>Тест обновили после вашей попытки. Показан засчитанный результат, без разбора по вопросам.</Notice>
+      )}
+
       {result.items.length > 0 && (
         <ol className="space-y-3">
           {result.items.map((item, i) => {

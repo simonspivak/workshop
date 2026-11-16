@@ -21,8 +21,11 @@ import {
 } from "@/lib/platform/generation-types";
 
 /*
-  Галерея (docs/platform/spec.md §3). Чтение — клиентом пользователя (RLS: своё; ведущий —
-  свои группы; общая галерея группы — только готовое и не скрытое, если ведущий её открыл).
+  Галерея (docs/platform/spec.md §3). Своё и галерея группы для ведущего — клиентом пользователя
+  (RLS: своё; ведущий — свои группы). Общая галерея группы для ученика — admin-клиентом
+  (аудит № 57: RLS больше не отдаёт одногруппникам строки jobs целиком): условия те же, что были
+  в политике — своя группа из сессии, ведущий открыл галерею, только готовое, не скрытое и не
+  удалённое; наружу уходят только поля карточки (toJobViews, промпт до 300 знаков).
   Подписи ссылок и ники одногруппников — admin-клиентом после явной проверки.
   Текстовые ответы в галерею не попадают: они остаются в уроке.
   Удалённые владельцем результаты (jobs.deleted_at) нигде не показываются: строка остаётся
@@ -107,8 +110,8 @@ export async function listSharedGroupGallery(user: SessionUser, query: GalleryQu
   if (!group?.shareGallery || isStaff(user)) return null;
   const page = Math.max(0, query.page ?? 0);
   const { from, to } = pageRange(page);
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  // admin-клиент: проверки выше (своя группа, галерея открыта, не ведущий) и фильтры ниже
+  const { data, error } = await createAdminClient()
     .from("jobs")
     .select(JOB_COLUMNS)
     .eq("group_id", group.id)
@@ -308,9 +311,10 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
     .in("action", MEDIA_ACTIONS)
     .order("created_at", { ascending: false })
     .limit(40);
+  // общая галерея — admin-клиентом с теми же условиями, что и в listSharedGroupGallery (аудит № 57)
   const shared =
     user.group?.shareGallery && !isStaff(user)
-      ? supabase
+      ? createAdminClient()
           .from("jobs")
           .select("id, user_id, action, params, prompt, storage_path, extra_paths, created_at")
           .eq("group_id", user.group.id)

@@ -6,7 +6,7 @@ import { createStudents, type CreatedStudent, type CreateStudentsResult } from "
 import { FieldError, FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
 import { Card, Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
-import { ageBandLabels } from "@/lib/platform/messages";
+import { ageBandLabels, consentMethodLabels } from "@/lib/platform/messages";
 import { mergeCreatedBatch, type CreatedSession } from "@/lib/platform/teacher-cabinet";
 
 type CreateError = Extract<CreateStudentsResult, { ok: false }>;
@@ -93,13 +93,31 @@ export function CreateStudents({
               </select>
               <p className={hintClass}>Потом можно поменять каждому отдельно.</p>
             </div>
-            <label className="flex items-start gap-3 self-center">
-              <input type="checkbox" name="consent" className="mt-1 size-5 accent-violet" />
-              <span>
-                Согласие родителей получено
-                <span className={`${hintClass} block`}>Отметьте, только если у вас есть письменные согласия.</span>
-              </span>
-            </label>
+            <div className="space-y-3 self-center">
+              <label className="flex items-start gap-3">
+                <input type="checkbox" name="consent" className="mt-1 size-5 accent-violet" />
+                <span>
+                  Согласие родителей получено
+                  <span className={`${hintClass} block`}>
+                    Отметьте, только если согласия есть у центра на каждого из пачки. Документы на платформу не
+                    загружаем.
+                  </span>
+                </span>
+              </label>
+              <div>
+                <label htmlFor="consentMethod" className={labelClass}>
+                  Как получено
+                </label>
+                <select id="consentMethod" name="consentMethod" defaultValue="paper_centre" className={`${inputClass} mt-2`}>
+                  {Object.entries(consentMethodLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <FieldError state={state} name="consentMethod" />
+              </div>
+            </div>
           </div>
           <FormError state={state} />
           <SubmitButton pendingText="Создаём аккаунты…">Добавить</SubmitButton>

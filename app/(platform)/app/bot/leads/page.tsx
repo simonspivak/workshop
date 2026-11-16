@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Download } from "lucide-react";
 import { getMyBotSummary, LEADS_PAGE, listMyLeads } from "@/lib/server/bot/dal";
+import { addDays, formatDay } from "@/lib/server/bot/lifetime";
 import { requireUser } from "@/lib/server/dal/auth";
 import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 import { BotNav } from "@/components/platform/BotNav";
 import { Card, Container, Notice, PageTitle, Skeleton, buttonClass } from "@/components/platform/ui";
+import { BOT_LEAD_RETENTION_DAYS } from "@/lib/platform/retention";
 
 export const metadata: Metadata = { title: "Заявки бота" };
 
@@ -26,6 +28,9 @@ async function BotLeads() {
   const user = await requireUser();
   const [summary, result] = await Promise.all([getMyBotSummary(user), listMyLeads(user)]);
   if (!summary || !result) redirect("/app/bot");
+  // заявки ботов учеников удаляет ночная чистка (lib/server/retention.ts, аудит № 23)
+  const endsOn = user.role === "student" ? user.group?.endsOn : null;
+  const deleteOn = endsOn && /^\d{4}-\d{2}-\d{2}$/.test(endsOn) ? addDays(endsOn, BOT_LEAD_RETENTION_DAYS + 1) : null;
 
   // Колонки: поля текущей формы, потом поля из старых заявок (если форму меняли)
   const columns = [...(result.form?.fields.map((f) => f.label) ?? [])];
@@ -60,6 +65,12 @@ async function BotLeads() {
             </Notice>
           )}
           <Notice>На уроке — только выдуманные данные. После события заявки с настоящими контактами лучше удалить.</Notice>
+          {deleteOn && (
+            <Notice tone="warn">
+              Заявки удалятся автоматически {formatDay(deleteOn)} — через {BOT_LEAD_RETENTION_DAYS} дней после последнего
+              урока. Нужны — скачайте CSV заранее.
+            </Notice>
+          )}
 
           {/* Телефон: карточки */}
           <ul className="space-y-3 sm:hidden">

@@ -67,7 +67,11 @@ export async function getLessonState(user: SessionUser, lessonId: string): Promi
   };
 }
 
-/** Засчитанная попытка → результат с объяснениями (ответы проверяются заново по ключу). */
+/**
+ * Засчитанная попытка → результат. Балл и бонус — как засчитаны тогда (quiz_attempts), их не
+ * пересчитываем. Разбор строится по текущему ключу; если по нему выходит другой балл или ответы
+ * не подходят к вопросам, ключ меняли после попытки — разбор не показываем, keyChanged (аудит № 55).
+ */
 export function recordedQuizResult(
   lessonId: string,
   answers: unknown,
@@ -78,7 +82,8 @@ export function recordedQuizResult(
   const key = getQuizKey(lessonId);
   const numbers = Array.isArray(answers) ? answers.map(Number) : [];
   const graded = key ? gradeQuiz(key, numbers) : null;
-  return { score, maxScore, bonus, alreadyDone: true, practice: false, items: graded?.items ?? [] };
+  const keyChanged = !graded || graded.maxScore !== maxScore || graded.score !== score;
+  return { score, maxScore, bonus, alreadyDone: true, practice: false, keyChanged, items: keyChanged ? [] : graded.items };
 }
 
 export function isLessonStep(lessonId: string, step: string): boolean {

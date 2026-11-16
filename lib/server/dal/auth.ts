@@ -150,3 +150,27 @@ export async function authorize(roles?: readonly Role[]): Promise<SessionUser> {
   if (roles && !roles.includes(user.role)) throw new AuthError("forbidden");
   return user;
 }
+
+/**
+ * Курс (уроки, генерации, студия, создание бота) — только ученику с группой; ведущему и админу
+ * группа не нужна. Ученик без группы бывает, если группу удалили или профиль создан не ведущим
+ * (например, включили регистрацию в Supabase). Кабинет, галерея, «Заявки» и «Забери бота»
+ * остаются ему доступны (аудит № 58).
+ */
+export function hasCourseAccess(user: Pick<SessionUser, "role" | "group">): boolean {
+  return user.role !== "student" || user.group !== null;
+}
+
+/** Для страниц курса: без входа — на /login, ученик без группы — в кабинет (там объяснение). */
+export async function requireCourseUser(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!hasCourseAccess(user)) redirect("/app");
+  return user;
+}
+
+/** Для Server Actions и Route Handlers курса: как authorize(), ученик без группы — AuthError('forbidden'). */
+export async function authorizeCourse(roles?: readonly Role[]): Promise<SessionUser> {
+  const user = await authorize(roles);
+  if (!hasCourseAccess(user)) throw new AuthError("forbidden");
+  return user;
+}

@@ -3,12 +3,14 @@ import { AuthError, isStaff, type SessionUser } from "@/lib/server/dal/auth";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
 import { getPriceList } from "@/lib/server/prices";
-import type { AgeBand, GroupKind } from "@/lib/server/supabase/types";
+import type { AgeBand, ConsentMethod, GroupKind } from "@/lib/server/supabase/types";
 
 /*
-  Данные кабинета учителя. Чтение — клиентом пользователя (RLS: учитель видит только свои
-  группы, админ — все) плюс явная проверка роли. Проверки для Server Actions —
-  assertTeachesGroup / assertTeachesStudent (admin-клиент + сравнение teacher_id).
+  Данные кабинета учителя. Учеников, кошельки и задачи читаем клиентом пользователя (RLS:
+  учитель видит только свои группы, админ — все) плюс явная проверка роли. Группы — admin-клиентом
+  с фильтром teacher_id: клиентам открыты только колонки группы, которые нужны ученику
+  (аудит № 57, миграция 20261116190000_privacy), а бюджет видит только ведущий.
+  Проверки для Server Actions — assertTeachesGroup / assertTeachesStudent (admin-клиент + сравнение teacher_id).
 */
 
 export type GroupSummary = {
@@ -33,6 +35,10 @@ export type StudentRow = {
   nickname: string;
   ageBand: AgeBand;
   consentAt: string | null;
+  /** как получено согласие (аудит № 25); null — не указано (отмечено до 16 ноября 2026) */
+  consentMethod: ConsentMethod | null;
+  /** кто отметил согласие: ник ведущего или админа; null — не записано */
+  consentBy: string | null;
   disabled: boolean;
   balance: number;
   createdAt: string;
@@ -82,7 +88,7 @@ function assertStaff(user: SessionUser) {
 export async function listGroups(user: SessionUser): Promise<GroupSummary[]> {
   assertStaff(user);
   const supabase = await createClient();
-  let query = supabase.from("groups").select(GROUP_COLUMNS).order("created_at", { ascending: false });
+  let query = createAdminClient().from("groups").select(GROUP_COLUMNS).order("created_at", { ascending: false });
   if (user.role !== "admin") query = query.eq("teacher_id", user.id);
   const { data: groups, error } = await query.returns<GroupDbRow[]>();
   if (error) throw new Error(`teacher.listGroups failed (${error.code})`);
@@ -108,7 +114,7 @@ export async function getGroup(user: SessionUser, groupId: string): Promise<Grou
   assertStaff(user);
   if (!isUuid(groupId)) return null;
   const supabase = await createClient();
-  const { data: group, error } = await supabase
+  const { data: group, error } = await createAdminClient()
     .from("groups")
     .select(GROUP_COLUMNS)
     .eq("id", groupId)
@@ -130,7 +136,7 @@ export async function listStudents(user: SessionUser, groupId: string): Promise<
   const supabase = await createClient();
   const { data: students, error } = await supabase
     .from("profiles")
-    .select("id, login, nickname, age_band, parental_consent_at, disabled, created_at")
+    .select("id, login, nickname, age_band, parental_consent_at, parental_consent_method, parental_consent_by, disabled, created_at")
     .eq("group_id", groupId)
     .eq("role", "student")
     .order("login", { ascending: true });
@@ -146,6 +152,7 @@ export async function listStudents(user: SessionUser, groupId: string): Promise<
     );
   if (walletsError) throw new Error(`teacher.listStudents wallets failed (${walletsError.code})`);
   const balances = new Map((wallets ?? []).map((w) => [w.user_id, w.balance]));
+  const recorders = await staffNicknames(students.map((s) => s.parental_consent_by));
 
   return students.map((s) => ({
     id: s.id,
@@ -153,10 +160,28 @@ export async function listStudents(user: SessionUser, groupId: string): Promise<
     nickname: s.nickname,
     ageBand: s.age_band,
     consentAt: s.parental_consent_at,
+    consentMethod: s.parental_consent_method,
+    consentBy: s.parental_consent_by ? (recorders.get(s.parental_consent_by) ?? "—") : null,
     disabled: s.disabled,
     balance: balances.get(s.id) ?? 0,
     createdAt: s.created_at,
   }));
+}
+
+/**
+ * Ники ведущих и админов, отметивших согласие. Admin-клиентом: ведущий через RLS не видит
+ * профиль админа. Только staff — ники учеников сюда не попадут.
+ */
+async function staffNicknames(ids: (string | null)[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  if (unique.length === 0) return new Map();
+  const { data, error } = await createAdminClient()
+    .from("profiles")
+    .select("id, nickname")
+    .in("id", unique)
+    .in("role", ["teacher", "admin"]);
+  if (error) throw new Error(`teacher.staffNicknames failed (${error.code})`);
+  return new Map((data ?? []).map((p) => [p.id, p.nickname]));
 }
 
 /**
@@ -213,22 +238,42 @@ export async function assertTeachesGroup(user: SessionUser, groupId: string): Pr
 export async function assertTeachesStudent(
   user: SessionUser,
   studentId: string,
-): Promise<{ student: { id: string; login: string | null; groupId: string; consentAt: string | null }; group: OwnedGroup }> {
+): Promise<{ student: TaughtStudent; group: OwnedGroup }> {
   assertStaff(user);
   if (!isUuid(studentId)) throw new AuthError("forbidden");
   const { data, error } = await createAdminClient()
     .from("profiles")
-    .select("id, login, role, group_id, parental_consent_at")
+    .select("id, login, nickname, role, group_id, age_band, parental_consent_at, parental_consent_method, parental_consent_by")
     .eq("id", studentId)
     .maybeSingle();
   if (error) throw new Error(`teacher.assertTeachesStudent failed (${error.code})`);
   if (!data || data.role !== "student" || !data.group_id) throw new AuthError("forbidden");
   const group = await assertTeachesGroup(user, data.group_id);
   return {
-    student: { id: data.id, login: data.login, groupId: data.group_id, consentAt: data.parental_consent_at },
+    student: {
+      id: data.id,
+      login: data.login,
+      nickname: data.nickname,
+      groupId: data.group_id,
+      ageBand: data.age_band,
+      consentAt: data.parental_consent_at,
+      consentMethod: data.parental_consent_method,
+      consentBy: data.parental_consent_by,
+    },
     group,
   };
 }
+
+export type TaughtStudent = {
+  id: string;
+  login: string | null;
+  nickname: string;
+  groupId: string;
+  ageBand: AgeBand;
+  consentAt: string | null;
+  consentMethod: ConsentMethod | null;
+  consentBy: string | null;
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function isUuid(value: string): boolean {

@@ -39,12 +39,14 @@ select is((select count(*)::int from public.star_ledger where user_id = 'c000000
 select is((select balance from public.wallets where user_id = 'c0000000-0000-4000-8000-000000000051'), 96,
   'баланс Анны: 100 − 2 − 2, удаление ничего не вернуло');
 
--- ---------- одногруппник Борис: общая галерея без удалённого ----------
+-- ---------- одногруппник Борис: строки Анны через Data API не видны ----------
+-- С 20261116190000_privacy общую галерею (без удалённого) отдаёт сервер admin-клиентом
+-- (lib/server/gallery.ts: фильтр deleted_at is null); RLS пускает только к своим строкам.
 reset role;
 set local role authenticated;
 set local request.jwt.claims to '{"sub": "c0000000-0000-4000-8000-000000000052", "role": "authenticated"}';
-select is((select count(*)::int from public.jobs where user_id = 'c0000000-0000-4000-8000-000000000051'), 1,
-  'одногруппник видит в общей галерее только неудалённую задачу');
+select is((select count(*)::int from public.jobs where user_id = 'c0000000-0000-4000-8000-000000000051'), 0,
+  'одногруппник не читает задачи Анны напрямую (ни удалённую, ни обычную)');
 
 -- ---------- Анна: свои строки видит (сервер фильтрует сам), менять не может ----------
 set local request.jwt.claims to '{"sub": "c0000000-0000-4000-8000-000000000051", "role": "authenticated"}';
