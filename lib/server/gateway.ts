@@ -231,6 +231,8 @@ export function failureKind(result: GatewayFailure): FailureKind {
   if (result.error === "gateway_unreachable") return "transient";
   const code = failureCode(result);
   if (code === 429 || RATE_LIMIT_TEXT.test(result.error)) return "rate_limited";
+  // «перегружен, попробуйте позже» — временный отказ, с каким бы кодом kie его ни прислал
+  if (TRANSIENT_TEXT.test(result.error) && !ACCOUNT_TEXT.test(result.error)) return "transient";
   if ((code >= 400 && code < 500) || ACCOUNT_TEXT.test(result.error)) return "permanent";
   if (code >= 500 || TRANSIENT_TEXT.test(result.error)) return "transient";
   return "final";
