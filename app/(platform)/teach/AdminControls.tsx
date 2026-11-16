@@ -37,11 +37,11 @@ export function GenerationSwitch({ enabled }: { enabled: boolean }) {
 const fields: { name: keyof StaffLimitsValue; label: string; hint: string }[] = [
   {
     name: "staff_daily_credits",
-    label: "Кредитов kie в день на ведущего",
+    label: "Кредитов kie в день",
     hint: "На каждый аккаунт ведущего и админа. 3000 ≈ $15 ≈ 20 клипов Seedance 2.5 по 5 с.",
   },
   { name: "teacher_grant_max", label: "★ за одно начисление", hint: "Ведущему. Админ может больше." },
-  { name: "teacher_grant_daily", label: "★ начислений ведущего в день", hint: "Снятие звёзд не считается." },
+  { name: "teacher_grant_daily", label: "★ начислений в день", hint: "Снятие звёзд не считается." },
 ];
 
 export function StaffLimitsForm({ limits }: { limits: StaffLimitsValue }) {
@@ -50,7 +50,7 @@ export function StaffLimitsForm({ limits }: { limits: StaffLimitsValue }) {
     <form action={action} className="grid grid-cols-1 gap-5 sm:grid-cols-3">
       {fields.map((field) => (
         <div key={field.name}>
-          <label htmlFor={field.name} className={labelClass}>
+          <label htmlFor={field.name} className={`${labelClass} block sm:min-h-12`}>
             {field.label}
           </label>
           <input
