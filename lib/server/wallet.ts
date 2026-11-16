@@ -156,6 +156,39 @@ export async function spendStars(input: {
 }
 
 /**
+ * Начислить всем активным ученикам группы (SQL grant_stars_group): mode 'add' — каждому
+ * + amount (минус — снять, но не ниже нуля), 'top_up_to' — довести каждого до amount.
+ * Каждое начисление идёт через grant_stars с её проверками и лимитами ведущего (grant_limit);
+ * при отказе не начисляется никому. Повтор с тем же idempotencyKey — already: true, без изменений.
+ */
+export async function grantStarsToGroup(input: {
+  actorId: string;
+  groupId: string;
+  amount: number;
+  mode: "add" | "top_up_to";
+  note?: string | null;
+  idempotencyKey: string;
+}): Promise<Result<{ affected: number; skipped: number; total: number; already: boolean }>> {
+  const { data, error } = await createAdminClient().rpc("grant_stars_group", {
+    p_actor: input.actorId,
+    p_group: input.groupId,
+    p_amount: input.amount,
+    p_mode: input.mode,
+    p_note: input.note ?? null,
+    p_key: input.idempotencyKey,
+  });
+  const row = data?.[0];
+  if (error || !row) return { ok: false, error: toWalletError(error, "grantStarsToGroup") };
+  return {
+    ok: true,
+    affected: Number(row.affected),
+    skipped: Number(row.skipped),
+    total: Number(row.total),
+    already: row.already,
+  };
+}
+
+/**
  * Засчитать тест урока (одна попытка на урок) и один раз начислить бонус.
  * score/maxScore/bonus считает сервер (submitQuiz), правильные ответы в браузер не уходят.
  * alreadyDone = true — попытка уже была, возвращается её результат, бонус не начисляется.

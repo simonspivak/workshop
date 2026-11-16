@@ -30,7 +30,10 @@ export function PauseControl({ group }: { group: GroupSettingsValue }) {
       {group.paused ? (
         <Notice tone="warn">Группа на паузе: ученики не могут генерировать, боты учеников молчат.</Notice>
       ) : (
-        <p className="text-ink-soft">Пауза сразу останавливает все генерации учеников группы. Звёзды не сгорают.</p>
+        <p className="text-ink-soft">
+          Пауза не даёт ученикам запускать новые платные генерации, боты учеников молчат. Начатые генерации доделаются.
+          Звёзды не сгорают.
+        </p>
       )}
       <FormError state={state} />
       <SubmitButton variant={group.paused ? "primary" : "danger"} pendingText="Секунду…">

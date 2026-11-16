@@ -5,11 +5,12 @@ import { audit } from "@/lib/server/audit";
 import { JOB_COLUMNS, toJobViews, type JobRecord } from "@/lib/server/job-progress";
 import { MEDIA_BUCKET } from "@/lib/server/jobs";
 import { mediaKindOfPath } from "@/lib/server/media-refs";
-import { listLibrary, MOTION_LIBRARY_FOLDER, signMediaPaths } from "@/lib/server/storage";
+import { forgetSignedUrls, listLibrary, MOTION_LIBRARY_FOLDER, signMediaPaths } from "@/lib/server/storage";
 import { lineText } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
 import type { Json } from "@/lib/server/supabase/types";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 import {
   jobActionLabels,
   type GalleryItem,
@@ -276,6 +277,7 @@ export async function deleteJob(user: SessionUser, jobId: string): Promise<{ ok:
     (path): path is string => Boolean(path) && (path as string).startsWith(`${job.user_id}/`),
   );
   if (paths.length) {
+    forgetSignedUrls(paths);
     try {
       const { error: removeError } = await admin.storage.from(MEDIA_BUCKET).remove(paths);
       if (removeError) console.error("gallery.deleteJob: storage remove failed", { jobId: job.id, message: removeError.message });
@@ -288,7 +290,7 @@ export async function deleteJob(user: SessionUser, jobId: string): Promise<{ ok:
 
 // ---------- файлы для референсов ----------
 
-const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "Europe/Berlin" });
+const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: PLATFORM_TIME_ZONE });
 
 /**
  * Готовые файлы, которые пользователь может подставить в генерацию: свои (последние 40)

@@ -1,5 +1,6 @@
 import { soulExportText } from "@/lib/server/bot/export";
-import { berlinDate, formatDay } from "@/lib/server/bot/lifetime";
+import { formatDay } from "@/lib/server/bot/lifetime";
+import { platformDate } from "@/lib/platform/time-zone";
 import { loadBotByOwner } from "@/lib/server/bot/store";
 import { getUser } from "@/lib/server/dal/auth";
 import { appUrl } from "@/lib/server/env";
@@ -24,7 +25,7 @@ export async function GET() {
     leadForm: bot.tools.leadForm,
     pageUrl: base ? `${base}/b/${bot.slug}` : null,
     kitUrl: base ? `${base}/bot-kit/README.md` : null,
-    exportedOn: formatDay(berlinDate(new Date())),
+    exportedOn: formatDay(platformDate(new Date())),
   });
 
   return new Response(text, {

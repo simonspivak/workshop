@@ -29,13 +29,16 @@ function supabaseOrigins(): string[] {
 }
 
 const supabase = supabaseOrigins().join(" ");
-// Ядро ffmpeg.wasm для автомонтажа (этап B3) грузится с CDN или из /public
-const ffmpegCdn = "https://unpkg.com https://cdn.jsdelivr.net";
+// Ядро ffmpeg.wasm для автомонтажа грузится из /public; запасной источник — jsDelivr
+// (байты принимаются только при совпадении sha256, lib/platform/montage/engine.ts и core-files.ts)
+const ffmpegCdn = "https://cdn.jsdelivr.net";
 
 function csp({ ffmpeg }: { ffmpeg: boolean }): string {
   return [
     "default-src 'self'",
-    // 'unsafe-inline' нужен Next.js без nonce. Для монтажа: 'wasm-unsafe-eval' и blob: — ffmpeg.wasm в воркере
+    // 'unsafe-inline' нужен Next.js без nonce: nonce требует динамического рендера каждой страницы
+    // и несовместим со статической оболочкой cacheComponents (docs/platform/spec.md §8).
+    // Для монтажа: 'wasm-unsafe-eval' и blob: — ffmpeg.wasm в воркере
     `script-src 'self' 'unsafe-inline'${ffmpeg ? " 'wasm-unsafe-eval' blob:" : ""}${isDev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${supabase}`,

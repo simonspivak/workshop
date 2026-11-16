@@ -11,7 +11,7 @@ import { assertTeachesGroup, assertTeachesStudent } from "@/lib/server/dal/teach
 import { ConfigError } from "@/lib/server/env";
 import { LOGIN_LIMITS, resetAttempts } from "@/lib/server/rate-limit";
 import { createAdminClient } from "@/lib/server/supabase/admin";
-import { grantStars } from "@/lib/server/wallet";
+import { grantStars, grantStarsToGroup } from "@/lib/server/wallet";
 import type { ActionResult, ErrorCode } from "@/lib/platform/messages";
 
 /*
@@ -21,7 +21,8 @@ import type { ActionResult, ErrorCode } from "@/lib/platform/messages";
   Пишем admin-клиентом: у клиентских ролей прав на запись нет.
 */
 
-const MAX_BATCH = 40;
+// 12 кругов по 5 вызовов Auth — несколько секунд, в maxDuration страницы (60 с) укладывается
+const MAX_BATCH = 60;
 
 /**
  * Звёзды «каждому ученику» в группе ведущего (не админа): стартовые звёзды идут триггером,
@@ -217,7 +218,7 @@ function parseNicknames(raw: string): string[] {
 /**
  * Создать пачку учеников: ник → логин <код>-<ник> + пароль из трёх слов и двух цифр.
  * Пароли возвращаются один раз (для печати карточек) и нигде не сохраняются.
- * Профиль, кошелёк и 1000 стартовых звёзд создаёт триггер в базе.
+ * Профиль, кошелёк и звёзды группы (stars_per_student) создаёт триггер в базе.
  */
 export async function createStudents(_prev: CreateStudentsResult | null, formData: FormData): Promise<CreateStudentsResult> {
   try {
@@ -405,6 +406,79 @@ export async function grantStudentStars(_prev: GrantResult | null, formData: For
     return { ok: true, balance: result.balance };
   } catch (error) {
     return fail(error, "grantStudentStars");
+  }
+}
+
+const groupGrantSchema = z
+  .object({
+    groupId: uuid,
+    mode: z.enum(["add", "top_up_to"]),
+    amount: z.coerce
+      .number()
+      .int()
+      .min(-10_000)
+      .max(10_000)
+      .refine((n) => n !== 0),
+    note: z.string().trim().max(200).optional(),
+    idempotencyKey: z.string().min(8).max(100),
+  })
+  .refine((v) => v.mode === "add" || v.amount > 0, { path: ["amount"] });
+
+export type GroupGrantResult = ActionResult<{ affected: number; skipped: number; total: number; already: boolean }>;
+
+/**
+ * Начислить всем ученикам группы (аудит № 27): «+N каждому» или «довести каждого до N».
+ * Лимиты ведущего проверяет SQL (grant_limit) на каждое начисление; при отказе — никому.
+ * Повтор с тем же ключом формы ничего не меняет. Отключённые ученики пропускаются.
+ */
+export async function grantGroupStars(_prev: GroupGrantResult | null, formData: FormData): Promise<GroupGrantResult> {
+  try {
+    const user = await authorize(STAFF_ROLES);
+    const parsed = groupGrantSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return invalid(parsed.error);
+    const group = await assertTeachesGroup(user, parsed.data.groupId);
+
+    const result = await grantStarsToGroup({
+      actorId: user.id,
+      groupId: group.id,
+      amount: parsed.data.amount,
+      mode: parsed.data.mode,
+      note: parsed.data.note || null,
+      idempotencyKey: parsed.data.idempotencyKey,
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+    refresh();
+    return { ok: true, affected: result.affected, skipped: result.skipped, total: result.total, already: result.already };
+  } catch (error) {
+    return fail(error, "grantGroupStars");
+  }
+}
+
+const disableSchema = z.object({ studentId: uuid, disabled: z.enum(["1", "0"]) });
+
+/**
+ * Отключить или включить ученика (аудит № 26). Отключённый сразу считается невошедшим
+ * (getUser), не входит и не тратит звёзды; SQL закрывает все его сессии и пишет audit_log.
+ * Звёзды, работы и журнал остаются — аккаунт не удаляется.
+ */
+export async function setStudentDisabled(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  try {
+    const user = await authorize(STAFF_ROLES);
+    const parsed = disableSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return invalid(parsed.error);
+    const { student } = await assertTeachesStudent(user, parsed.data.studentId);
+
+    const { error } = await createAdminClient().rpc("set_student_disabled", {
+      p_actor: user.id,
+      p_user: student.id,
+      p_disabled: parsed.data.disabled === "1",
+    });
+    if (error?.message === "forbidden") throw new AuthError("forbidden");
+    if (error) throw new Error(`set_student_disabled failed (${error.code})`);
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return fail(error, "setStudentDisabled");
   }
 }
 

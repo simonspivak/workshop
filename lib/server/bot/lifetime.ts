@@ -1,9 +1,10 @@
 import "server-only";
 import { BOT_LIMITS } from "@/lib/server/bot/limits";
+import { platformDate } from "@/lib/platform/time-zone";
 
 /*
   Срок жизни бота (docs/platform/spec.md §5): бот ученика работает до groups.ends_on + 14 дней
-  включительно (дата по Берлину). Потом: веб-чат показывает «бот переехал», Telegram-вебхук
+  включительно (дата в часовом поясе платформы, lib/platform/time-zone.ts). Потом: веб-чат показывает «бот переехал», Telegram-вебхук
   снимается при первом входящем сообщении, конструктор — «Забери бота с собой».
   Боты ведущих и админов не ограничены. Пока у группы нет даты окончания — тоже без срока.
 */
@@ -32,7 +33,7 @@ export function botLifetime(
   if (!owner.endsOn || !DATE_RE.test(owner.endsOn)) return UNLIMITED;
 
   const lastDay = addDays(owner.endsOn, graceDays);
-  const today = berlinDate(now);
+  const today = platformDate(now);
   const retired = today > lastDay;
   return {
     limited: true,
@@ -40,17 +41,6 @@ export function botLifetime(
     retired,
     daysLeft: retired ? null : daysBetween(today, lastDay) + 1,
   };
-}
-
-/** Дата YYYY-MM-DD в Берлине (часовой пояс курса). */
-export function berlinDate(now: Date): string {
-  // en-CA даёт формат YYYY-MM-DD
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Berlin",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
 }
 
 export function addDays(day: string, days: number): string {

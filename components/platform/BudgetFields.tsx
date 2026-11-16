@@ -14,8 +14,8 @@ export function BudgetFields({ state, initial }: { state: ActionResult | null; i
   const [perStudent, setPerStudent] = useState(initial?.perStudent?.toString() ?? "");
   const [manual, setManual] = useState(false);
 
-  function recalc(nextBudget: string, nextPlanned: string) {
-    if (manual) return;
+  function recalc(nextBudget: string, nextPlanned: string, force = false) {
+    if (manual && !force) return;
     const b = Number(nextBudget);
     const p = Number(nextPlanned);
     if (b > 0 && p > 0) setPerStudent(String(Math.floor(b / p)));
@@ -79,14 +79,17 @@ export function BudgetFields({ state, initial }: { state: ActionResult | null; i
           required
           value={perStudent}
           onChange={(e) => {
-            setManual(true);
+            // пустое поле снова считается само: бюджет ÷ ученики
+            const cleared = e.target.value === "";
+            setManual(!cleared);
             setPerStudent(e.target.value);
+            if (cleared) recalc(budget, planned, true);
           }}
           className={`${inputClass} mt-2 font-mono`}
         />
         <p className={hintClass}>
-          Считается само: бюджет ÷ ученики. Можно поправить. Получают новые ученики группы; уже созданным —
-          кнопкой «Начислить».
+          Считается само: бюджет ÷ ученики. Можно поправить, очистите поле — посчитается снова. Получают новые
+          ученики группы; уже созданным — кнопкой «Начислить всем» в карточке «Звёзды группы».
         </p>
         <FieldError state={state} name="starsPerStudent" />
       </div>

@@ -1,4 +1,5 @@
 import "server-only";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 
 /*
   Экспорт заявок в CSV для владельца бота.
@@ -48,7 +49,7 @@ export function escapeCell(value: string): string {
 
 export function formatDateTime(value: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Berlin",
+    timeZone: PLATFORM_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

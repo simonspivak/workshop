@@ -361,6 +361,38 @@ export type Database = {
           outcome: "accepted" | "duplicate" | "sender_hour" | "network_hour" | "bot_day" | "global_day";
         }[];
       };
+      // кабинет ведущего (20261116170000_teacher_aggregates): p_actor — кто вызывает, SQL проверяет доступ
+      group_star_stats: {
+        Args: { p_actor: string; p_group: string };
+        Returns: { given: number; handed: number; spent: number }[];
+      };
+      group_report_spending: {
+        Args: { p_actor: string; p_group: string };
+        Returns: {
+          user_id: string;
+          spent_total: number;
+          spent_today: number;
+          generations: number;
+          refunds: number;
+          bot_replies: number;
+        }[];
+      };
+      group_report_progress: {
+        Args: { p_actor: string; p_group: string; p_lessons: string[]; p_steps: string[] };
+        Returns: { user_id: string; lesson_id: string; steps: number }[];
+      };
+      set_student_disabled: { Args: { p_actor: string; p_user: string; p_disabled: boolean }; Returns: boolean };
+      grant_stars_group: {
+        Args: {
+          p_actor: string;
+          p_group: string;
+          p_amount: number;
+          p_mode: "add" | "top_up_to";
+          p_note: string | null;
+          p_key: string;
+        };
+        Returns: { affected: number; skipped: number; total: number; already: boolean }[];
+      };
       rate_limit_hit: { Args: { p_key: string; p_limit: number; p_window_seconds: number }; Returns: boolean };
       rate_limit_reset: { Args: { p_key: string }; Returns: undefined };
       // 20261116150000_login_limits: занять попытку (id или null — лимит) и вернуть именно её

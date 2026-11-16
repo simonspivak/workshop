@@ -2,20 +2,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, ChartColumn, ClipboardCheck, Images, Bot } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChartColumn, ClipboardCheck, Download, Images, Bot } from "lucide-react";
+import { AutoRefresh } from "./AutoRefresh";
 import { CreateStudents } from "./CreateStudents";
+import { GroupGrantForm } from "./GroupGrantForm";
 import { GroupSettingsForm, PauseControl } from "./GroupSettings";
 import { StudentList } from "./StudentList";
 import { requireStaff } from "@/lib/server/dal/auth";
-import { getGroup, getGroupStarStats, listStudents } from "@/lib/server/dal/teacher";
+import { getGroup, getGroupStarStats, listStudents, lowBalanceThreshold } from "@/lib/server/dal/teacher";
 import { groupKindLabels } from "@/lib/platform/messages";
-import { Badge, Card, Container, PageTitle, Skeleton } from "@/components/platform/ui";
+import { budgetWarnings } from "@/lib/platform/teacher-cabinet";
+import { Badge, Card, Container, Notice, PageTitle, Skeleton, buttonClass } from "@/components/platform/ui";
 
 export const metadata: Metadata = {
   title: "Группа",
 };
 
-// Создание пачки учеников — до 40 вызовов Auth API
+// Создание пачки учеников — до 60 вызовов Auth API
 export const maxDuration = 60;
 
 export default function GroupPage({ params }: PageProps<"/teach/groups/[id]">) {
@@ -39,7 +42,20 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const group = await getGroup(user, id);
   if (!group) notFound();
-  const [students, stars] = await Promise.all([listStudents(user, group.id), getGroupStarStats(user, group.id)]);
+  const [students, stars, lowThreshold] = await Promise.all([
+    listStudents(user, group.id),
+    getGroupStarStats(user, group.id),
+    lowBalanceThreshold(),
+  ]);
+  const activeStudents = students.filter((s) => !s.disabled).length;
+  const disabledStudents = students.length - activeStudents;
+  const warnings = budgetWarnings({
+    budgetStars: group.budgetStars,
+    plannedStudents: group.plannedStudents,
+    starsPerStudent: group.starsPerStudent,
+    activeStudents,
+    handed: stars.handed,
+  });
 
   const settings = {
     id: group.id,
@@ -59,7 +75,10 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
       <div className="print:hidden">
         <PageTitle eyebrow={`Группа ${group.code} · ${groupKindLabels[group.kind]}`} title={group.title}>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-2 text-base">
-            <span>Учеников: {group.studentCount}</span>
+            <span>
+              Учеников: {group.studentCount}
+              {disabledStudents > 0 && `, отключено: ${disabledStudents}`}
+            </span>
             {group.endsOn && <span>Последний урок: {formatDay(group.endsOn)}</span>}
             {group.paused && <Badge tone="warn">пауза</Badge>}
             {group.allowGoogleMinors && <Badge>Google для младших</Badge>}
@@ -102,18 +121,36 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
           <Card title="Звёзды группы">
             <dl className="space-y-2 font-mono text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-ink-soft">Бюджет</dt>
+                <dt className="text-ink-soft">Бюджет на курс</dt>
                 <dd>{group.budgetStars != null ? `${group.budgetStars.toLocaleString("ru-RU")} ★` : "не задан"}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-ink-soft">Роздано</dt>
-                <dd>{stars.given.toLocaleString("ru-RU")} ★</dd>
+                <dd>{stars.handed.toLocaleString("ru-RU")} ★</dd>
               </div>
+              {stars.given !== stars.handed && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-ink-soft">Бонусы за тесты</dt>
+                  <dd>{(stars.given - stars.handed).toLocaleString("ru-RU")} ★</dd>
+                </div>
+              )}
               <div className="flex justify-between gap-4">
                 <dt className="text-ink-soft">Потрачено</dt>
                 <dd>{stars.spent.toLocaleString("ru-RU")} ★</dd>
               </div>
             </dl>
+            {warnings.length > 0 && (
+              <Notice tone="warn" className="mt-3">
+                {warnings.map((text) => (
+                  <span key={text} className="block">
+                    {text}
+                  </span>
+                ))}
+              </Notice>
+            )}
+            <div className="mt-5 border-t border-ink/10 pt-4">
+              <GroupGrantForm groupId={group.id} activeStudents={activeStudents} />
+            </div>
           </Card>
           <Card title="Пауза">
             <PauseControl group={settings} />
@@ -124,7 +161,14 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
       <CreateStudents groupId={group.id} groupCode={group.code} groupTitle={group.title} starsPerStudent={group.starsPerStudent} />
 
       <Card title={`Ученики · ${students.length}`} className="print:hidden">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <AutoRefresh />
+          <a href={`/teach/groups/${group.id}/report.csv`} download className={buttonClass("secondary", "sm")}>
+            <Download aria-hidden="true" className="size-4" /> Отчёт CSV
+          </a>
+        </div>
         <StudentList
+          lowThreshold={lowThreshold}
           students={students.map((s) => ({
             id: s.id,
             login: s.login,

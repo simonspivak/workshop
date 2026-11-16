@@ -15,7 +15,11 @@ export type AuditAction =
   | "students.create"
   | "student.password_reset"
   | "student.age_update"
+  | "student.disable" // пишет SQL-функция set_student_disabled
+  | "student.enable" // пишет SQL-функция set_student_disabled
+  | "group.report_export" // ведущий скачал отчёт группы (CSV)
   | "stars.grant" // пишет SQL-функция grant_stars
+  | "stars.grant_group" // пишет SQL-функция grant_stars_group (плюс stars.grant на каждого ученика)
   | "job.hide"
   | "job.unhide"
   | "job.delete" // ученик удалил свой результат (или ведущий — результат ученика)

@@ -5,6 +5,7 @@ import { AuthError, type SessionUser } from "@/lib/server/dal/auth";
 import { appUrl, ConfigError, supabasePublicConfig } from "@/lib/server/env";
 import { completeJob, MEDIA_BUCKET, mediaPath } from "@/lib/server/jobs";
 import { moderateFields } from "@/lib/server/moderation";
+import { signMediaPathsWithExpiry, SIGNED_URL_TTL_SEC } from "@/lib/server/storage";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
 import type { JobAction, Json } from "@/lib/server/supabase/types";
@@ -33,7 +34,6 @@ import {
 
 export const MONTAGE_MODEL = "platform/auto-montage";
 
-const SIGNED_URL_TTL = 60 * 60;
 const LIST_LIMIT = 150;
 /** незавершённая загрузка старше этого — брошена, задачу закрываем */
 const STALE_UPLOAD_MINUTES = 30;
@@ -222,33 +222,29 @@ export async function listStudioMedia(user: SessionUser): Promise<StudioMediaRes
     ...(own.data ?? []).flatMap((row) => candidates(row, true)),
     ...(shared.data ?? []).flatMap((row) => candidates(row, false)),
   ];
-  const expiresAt = new Date(Date.now() + SIGNED_URL_TTL * 1000).toISOString();
-  if (list.length === 0) return { items: [], me: { nickname: user.nickname }, shareGallery, expiresAt };
+  const fullTtl = new Date(Date.now() + SIGNED_URL_TTL_SEC * 1000).toISOString();
+  if (list.length === 0) return { items: [], me: { nickname: user.nickname }, shareGallery, expiresAt: fullTtl };
 
   const admin = createAdminClient();
   const otherIds = [...new Set(list.filter((c) => !c.own).map((c) => c.userId))];
+  // ссылки из общего кеша (storage.ts): срок у каждой свой, студии сообщаем самый ранний
   const [signed, profiles] = await Promise.all([
-    admin.storage.from(MEDIA_BUCKET).createSignedUrls(
-      list.map((c) => c.path),
-      SIGNED_URL_TTL,
-    ),
+    signMediaPathsWithExpiry(list.map((c) => c.path)),
     otherIds.length
       ? admin.from("profiles").select("id, nickname").in("id", otherIds)
       : Promise.resolve({ data: [] as { id: string; nickname: string }[], error: null }),
   ]);
-  if (signed.error) throw new Error(`studio.list sign failed (${signed.error.message})`);
-  const urlByPath = new Map<string, string>();
-  for (const entry of signed.data ?? []) {
-    if (entry.path && entry.signedUrl && !entry.error) urlByPath.set(entry.path, entry.signedUrl);
-  }
   const nickById = new Map((profiles.data ?? []).map((p) => [p.id, p.nickname]));
 
   const items: StudioMediaItem[] = [];
+  let earliest = Number.POSITIVE_INFINITY;
   for (const { path, userId, ...item } of list) {
-    const url = urlByPath.get(path);
-    if (!url) continue;
-    items.push({ ...item, url, author: item.own ? null : (nickById.get(userId) ?? null) });
+    const entry = signed.get(path);
+    if (!entry) continue;
+    earliest = Math.min(earliest, entry.expiresAt);
+    items.push({ ...item, url: entry.url, author: item.own ? null : (nickById.get(userId) ?? null) });
   }
+  const expiresAt = Number.isFinite(earliest) ? new Date(earliest).toISOString() : fullTtl;
   return { items, me: { nickname: user.nickname }, shareGallery, expiresAt };
 }
 

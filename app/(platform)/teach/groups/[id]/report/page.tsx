@@ -2,13 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Card, Container, PageTitle, Skeleton, Stars } from "@/components/platform/ui";
+import { ArrowLeft, Download } from "lucide-react";
+import { Card, Container, PageTitle, Skeleton, Stars, buttonClass } from "@/components/platform/ui";
 import { requireStaff } from "@/lib/server/dal/auth";
 import { getGroup } from "@/lib/server/dal/teacher";
 import { getGroupReport, type GroupReport } from "@/lib/server/group-reports";
+import { PLATFORM_TIME_ZONE_CITY } from "@/lib/platform/time-zone";
 
-export const metadata: Metadata = { title: "Отчёт группы" };
+export const metadata: Metadata = { title: "Прогресс, тесты и звёзды" };
+
+// Запас по времени на большую группу (аудит № 15); суммы считает SQL, обычно это доли секунды
+export const maxDuration = 60;
 
 export default function GroupReportPage({ params }: PageProps<"/teach/groups/[id]/report">) {
   return (
@@ -33,12 +37,19 @@ async function Report({ params }: { params: Promise<{ id: string }> }) {
         <ArrowLeft aria-hidden="true" className="size-4" /> Группа {group.code}
       </Link>
       <PageTitle eyebrow={`Группа ${group.code} · ${group.title}`} title="Прогресс, тесты и звёзды">
-        Отметки учеников по урокам, засчитанные тесты и траты. День считается по Берлину.
+        Отметки учеников по урокам, засчитанные тесты и траты. День считается по {PLATFORM_TIME_ZONE_CITY}.
       </PageTitle>
+      <a href={`/teach/groups/${group.id}/report.csv`} download className={`${buttonClass("secondary", "sm")} mb-6`}>
+        <Download aria-hidden="true" className="size-4" /> Скачать CSV
+      </a>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Потрачено сегодня" value={<Stars value={report.totals.spentToday} />} hint={group.budgetStars != null ? `Бюджет группы: ${group.budgetStars.toLocaleString("ru-RU")} ★` : "Бюджет группы не задан"} />
-        <Stat label="Потрачено за всё время" value={<Stars value={report.totals.spentTotal} />} hint="С учётом возвратов" />
+        <Stat label="Потрачено сегодня" value={<Stars value={report.totals.spentToday} />} hint="С учётом возвратов, день по Берлину" />
+        <Stat
+          label="Потрачено за всё время"
+          value={<Stars value={report.totals.spentTotal} />}
+          hint={group.budgetStars != null ? `Бюджет группы на курс: ${group.budgetStars.toLocaleString("ru-RU")} ★` : "Бюджет группы не задан"}
+        />
         <Stat label="Бонусы за тесты" value={<Stars value={report.totals.quizBonus} />} hint="+20 ★ за 8 из 10" />
       </div>
 
@@ -141,7 +152,7 @@ function SpendingTable({ report }: { report: GroupReport }) {
                 Всего
               </th>
               <th scope="col" className={th}>
-                Генераций
+                Списаний
               </th>
               <th scope="col" className={th}>
                 Возвратов

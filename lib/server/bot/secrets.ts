@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { botTokenKey } from "@/lib/server/env";
-import { berlinDate } from "@/lib/server/bot/lifetime";
+import { platformDate } from "@/lib/platform/time-zone";
 import { senderHash } from "@/lib/server/bot/ratelimit";
 
 /*
@@ -18,7 +18,7 @@ function derivedKey(purpose: string): Buffer {
 
 /** Хеш IP (веб) или chat id (Telegram) на сегодня. */
 export function hashSender(kind: "ip" | "tg", value: string, now = new Date()): string {
-  return senderHash(derivedKey("sender"), kind, value, berlinDate(now));
+  return senderHash(derivedKey("sender"), kind, value, platformDate(now));
 }
 
 /** Постоянный псевдоним чата Telegram для conversation_id (сам chat id не храним). */

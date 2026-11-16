@@ -321,7 +321,7 @@ async function replayOutcome(jobId: string, balance: number): Promise<GenerateOu
     return { kind: "error", status: 502, error: jobErrorCode(job.error) ?? "gateway_error", jobId };
   }
   if (job?.action === "text" && job.status === "queued" && Date.now() - Date.parse(job.created_at) > DEAD_TEXT_JOB_MS) {
-    await refundJob(jobId, refundReason("gateway_lost", "request lost before reply"));
+    await refundQuietly(jobId, refundReason("gateway_lost", "request lost before reply"));
     return { kind: "error", status: 502, error: "gateway_lost", jobId };
   }
   return { kind: "accepted", jobId, balance, reused: true };
@@ -335,25 +335,57 @@ function gatewayErrorCode(result: GatewayFailure): JobErrorCode {
   return isAccountFailure(result) ? "gateway_unavailable" : "gateway_rejected";
 }
 
+/**
+ * Возврат звёзд, который не бросает: путь, где он нужен, уже идёт к ответу с ошибкой.
+ * Если и возврат не прошёл, задачу закроет следующий create_job этого ученика
+ * (stale queued > 90 с) или обход /api/jobs/sweep.
+ */
+async function refundQuietly(jobId: string, reason: string): Promise<void> {
+  try {
+    const refunded = await refundJob(jobId, reason);
+    if (!refunded.ok) console.error("generate: refund failed", { jobId, error: refunded.error });
+  } catch (error) {
+    console.error("generate: refund threw", { jobId, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * Синхронный текст. Звёзды уже списаны (create_job), поэтому каждый выход либо завершает задачу
+ * (complete_job), либо возвращает звёзды (аудит № 16: «призрачные» задачи в очереди).
+ */
 async function runText(
   jobId: string,
   balance: number,
   request: { model: string; prompt: string; maxTokens: number; staff: boolean },
 ): Promise<GenerateOutcome> {
-  const result = await generateText({
-    model: request.model as ModelFor<"text">,
-    prompt: request.prompt,
-    system: request.staff ? undefined : TEXT_SYSTEM,
-    maxTokens: request.maxTokens,
-  });
+  let result: Awaited<ReturnType<typeof generateText>>;
+  try {
+    result = await generateText({
+      model: request.model as ModelFor<"text">,
+      prompt: request.prompt,
+      system: request.staff ? undefined : TEXT_SYSTEM,
+      maxTokens: request.maxTokens,
+    });
+  } catch (error) {
+    await refundQuietly(jobId, refundReason("gateway_error", "text call threw"));
+    throw error;
+  }
   if (!result.ok) {
     const code = gatewayErrorCode(result);
-    await refundJob(jobId, refundReason(code, result.error));
+    await refundQuietly(jobId, refundReason(code, result.error));
     return { kind: "error", status: 502, error: code, jobId };
   }
-  await completeJob(jobId, { text: result.text.slice(0, 20_000), credits: result.credits });
+  try {
+    const completed = await completeJob(jobId, { text: result.text.slice(0, 20_000), credits: result.credits });
+    if (!completed) console.error("generate: text job left the queue before complete", { jobId });
+  } catch {
+    // Ответ модели есть, а записать его не вышло: возвращаем звёзды. Если complete_job всё же
+    // прошёл (оборвался только ответ базы), refund_job готовую задачу не тронет.
+    await refundQuietly(jobId, refundReason("gateway_error", "complete failed"));
+    return { kind: "error", status: 500, error: "server_error", jobId };
+  }
   const job = await loadJob(jobId);
-  if (!job) return { kind: "error", status: 500, error: "server_error" };
+  if (!job) return { kind: "error", status: 500, error: "server_error", jobId };
   return { kind: "text", job: await toJobView(job), balance };
 }
 
@@ -371,7 +403,7 @@ async function submitTask(jobId: string, balance: number, request: TaskRequest):
     return { kind: "accepted", jobId, balance, reused: false };
   }
   const code = gatewayErrorCode(result);
-  await refundJob(jobId, refundReason(code, result.error));
+  await refundQuietly(jobId, refundReason(code, result.error));
   return { kind: "error", status: 502, error: code, jobId };
 }
 

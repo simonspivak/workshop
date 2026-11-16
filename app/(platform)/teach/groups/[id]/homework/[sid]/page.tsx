@@ -11,6 +11,7 @@ import { requireStaff } from "@/lib/server/dal/auth";
 import { getGroup, isUuid } from "@/lib/server/dal/teacher";
 import { getHomeworkForTeacher } from "@/lib/server/homework/submissions";
 import { formatBytes, homeworkKindLabels, homeworkStatusLabels } from "@/lib/platform/homework-types";
+import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 
 export const metadata: Metadata = { title: "Домашка ученика" };
 
@@ -113,7 +114,7 @@ async function Detail({ params }: { params: Promise<{ id: string; sid: string }>
 }
 
 function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" }).format(new Date(value));
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: PLATFORM_TIME_ZONE }).format(new Date(value));
 }
 
 function DetailSkeleton() {

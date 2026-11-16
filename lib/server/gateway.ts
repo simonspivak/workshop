@@ -1,5 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { deadlineSignal } from "@/lib/server/deadline";
 import { gatewayConfig } from "@/lib/server/env";
 import { mockMedia, type MockMediaKind } from "@/lib/server/mock-media";
 
@@ -422,12 +423,22 @@ export type DownloadResult =
   | { ok: true; bytes: Uint8Array; contentType: ResultContentType; ext: string }
   | { ok: false; error: "host_not_allowed" | "too_large" | "bad_type" | "download_failed" };
 
+/** Один хоп скачивания ждёт не дольше этого (и не дольше общего срока deadline). */
+const DOWNLOAD_HOP_TIMEOUT_MS = 60_000;
+
 /**
  * Скачать файл результата: только https с доменов kie (редиректы проверяются так же),
  * не больше maxBytes, тип — по первым байтам файла, а не по заголовку.
+ * options.deadline (Date.now()) — общий срок на все хопы и чтение тела: к нему скачивание
+ * обрывается с download_failed (повтор — по правилам опроса), а после него не начинается
+ * (аудит № 21: сохранение должно уложиться в 60 с функции). Без deadline — как раньше.
  * В mock-режиме ссылки mock://… отдают встроенные файлы-заглушки.
  */
-export async function downloadResult(value: string, maxBytes = MAX_RESULT_BYTES): Promise<DownloadResult> {
+export async function downloadResult(
+  value: string,
+  maxBytes = MAX_RESULT_BYTES,
+  options: { deadline?: number } = {},
+): Promise<DownloadResult> {
   if (value.startsWith("mock://")) {
     if (!isMockMode()) return { ok: false, error: "host_not_allowed" };
     const kind = (value.slice("mock://".length).split("/")[0] || "image") as MockMediaKind;
@@ -438,9 +449,12 @@ export async function downloadResult(value: string, maxBytes = MAX_RESULT_BYTES)
   let current = value;
   for (let hop = 0; hop < 3; hop++) {
     if (!isAllowedResultUrl(current)) return { ok: false, error: "host_not_allowed" };
+    // сигнал действует и на чтение тела ниже: зависшая отдача файла тоже обрывается к сроку
+    const signal = deadlineSignal(options.deadline, DOWNLOAD_HOP_TIMEOUT_MS);
+    if (!signal) return { ok: false, error: "download_failed" };
     let response: Response;
     try {
-      response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(60_000), cache: "no-store" });
+      response = await fetch(current, { redirect: "manual", signal, cache: "no-store" });
     } catch {
       return { ok: false, error: "download_failed" };
     }
@@ -458,7 +472,13 @@ export async function downloadResult(value: string, maxBytes = MAX_RESULT_BYTES)
     let size = 0;
     const reader = response.body.getReader();
     for (;;) {
-      const { done, value: chunk } = await reader.read();
+      let step: ReadableStreamReadResult<Uint8Array>;
+      try {
+        step = await reader.read();
+      } catch {
+        return { ok: false, error: "download_failed" };
+      }
+      const { done, value: chunk } = step;
       if (done) break;
       size += chunk.byteLength;
       if (size > maxBytes) {
