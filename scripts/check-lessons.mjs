@@ -13,7 +13,7 @@ const MODELS = {
   image: { "flux-3/klein-text-to-image": 2, "nano-banana-2-1": 5 },
   image_edit: { "flux-3/klein-edit-image": 2, "nano-banana-2-1": 5 },
   video: { "bytedance/seedance-2-mini": 25 },
-  motion: { "kling-2.6/motion-control": 70 },
+  motion: { "kling-2.6/motion-control": 126 },
   lipsync: { "kling/ai-avatar-standard": 60 },
   voice: { "google/gemini-3-8-flash-tts": 2 },
   music: { "ai-music-api/generate": 15 },
