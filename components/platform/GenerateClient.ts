@@ -17,7 +17,15 @@ export function newIdempotencyKey(): string {
 
 export type GenerateResponse =
   | { ok: true; jobId: string; job: JobView | null; balance: number | null }
-  | { ok: false; error: string; jobId?: string; network?: boolean };
+  | {
+      ok: false;
+      error: string;
+      jobId?: string;
+      /** запрос не ушёл или ответ оборвался в сети */
+      network?: boolean;
+      /** 5xx без нашего JSON (таймаут Vercel 504 и т. п.): задача могла создаться и списать звёзды */
+      infra?: boolean;
+    };
 
 export async function postGenerate(body: Record<string, unknown>): Promise<GenerateResponse> {
   let response: Response;
@@ -32,6 +40,10 @@ export async function postGenerate(body: Record<string, unknown>): Promise<Gener
     return { ok: false, error: "server_error", network: true };
   }
   const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok && !data && response.status >= 500) {
+    // ответил не наш маршрут, а платформа (функция оборвалась): ключ сохраняем, повтор не спишет дважды
+    return { ok: false, error: "request_lost", infra: true };
+  }
   if (!response.ok || !data || typeof data.jobId !== "string") {
     return {
       ok: false,
