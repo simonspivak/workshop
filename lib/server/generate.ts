@@ -141,6 +141,8 @@ const WALLET_STATUS: Record<WalletError, number> = {
   insufficient_stars: 409,
   group_paused: 409,
   daily_cap: 409,
+  staff_daily_cap: 429,
+  grant_limit: 409,
   generation_disabled: 503,
   too_many_jobs: 429,
   unknown_model: 400,

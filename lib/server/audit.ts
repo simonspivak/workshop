@@ -29,7 +29,10 @@ export type AuditAction =
   | "bot.telegram_retired"
   // домашки: оценка ИИ (пишет сервер после проверки) и оценка ведущего
   | "homework.graded"
-  | "homework.teacher_grade";
+  | "homework.teacher_grade"
+  // пульт админа: «Стоп генераций» и потолки ведущих
+  | "settings.generation"
+  | "settings.staff_limits";
 
 export async function audit(entry: {
   actorId: string | null;

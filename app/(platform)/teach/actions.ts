@@ -6,6 +6,7 @@ import { z } from "zod";
 import { assignLogins, generatePassword, loginToEmail, studentEmail, GROUP_CODE_RE } from "@/lib/server/accounts";
 import { audit } from "@/lib/server/audit";
 import { AuthError, authorize, STAFF_ROLES } from "@/lib/server/dal/auth";
+import { STAFF_LIMIT_KEYS } from "@/lib/server/dal/admin";
 import { assertTeachesGroup, assertTeachesStudent } from "@/lib/server/dal/teacher";
 import { ConfigError } from "@/lib/server/env";
 import { LOGIN_LIMITS, resetAttempts } from "@/lib/server/rate-limit";
@@ -21,6 +22,22 @@ import type { ActionResult, ErrorCode } from "@/lib/platform/messages";
 */
 
 const MAX_BATCH = 40;
+
+/**
+ * Звёзды «каждому ученику» в группе ведущего (не админа): стартовые звёзды идут триггером,
+ * мимо лимитов grant_stars, поэтому без этой границы лимит начислений обходится созданием группы.
+ */
+const TEACHER_MAX_STARS_PER_STUDENT = 5000;
+
+/** Ведущему — не больше TEACHER_MAX_STARS_PER_STUDENT на ученика; админу — как в схеме. */
+function overTeacherStarsLimit(role: string, starsPerStudent: number) {
+  if (role === "admin" || starsPerStudent <= TEACHER_MAX_STARS_PER_STUDENT) return null;
+  return {
+    ok: false as const,
+    error: "invalid_input" as const,
+    fields: { starsPerStudent: `Ведущему — не больше ${TEACHER_MAX_STARS_PER_STUDENT}★ на ученика. Больше — через администратора.` },
+  };
+}
 
 const groupKinds = ["teens", "adults", "corporate", "individual", "demo"] as const;
 const ageBands = ["u16", "16_17", "adult"] as const;
@@ -73,6 +90,8 @@ export async function createGroup(_prev: ActionResult | null, formData: FormData
     const parsed = createGroupSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return invalid(parsed.error);
     const input = parsed.data;
+    const overLimit = overTeacherStarsLimit(user.role, input.starsPerStudent);
+    if (overLimit) return overLimit;
 
     const { data, error } = await createAdminClient()
       .from("groups")
@@ -109,6 +128,8 @@ export async function updateGroup(_prev: ActionResult | null, formData: FormData
     const parsed = updateGroupSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return invalid(parsed.error);
     const input = parsed.data;
+    const overLimit = overTeacherStarsLimit(user.role, input.starsPerStudent);
+    if (overLimit) return overLimit;
     const group = await assertTeachesGroup(user, input.groupId);
 
     const { error } = await createAdminClient()
@@ -384,5 +405,64 @@ export async function grantStudentStars(_prev: GrantResult | null, formData: For
     return { ok: true, balance: result.balance };
   } catch (error) {
     return fail(error, "grantStudentStars");
+  }
+}
+
+// ---------- пульт админа ----------
+
+const generationSchema = z.object({ enabled: z.enum(["1", "0"]) });
+
+/** «Стоп генераций»: settings.generation_enabled. SQL (create_job, spend_stars) читает его на каждой трате. */
+export async function setGenerationEnabled(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  try {
+    const user = await authorize(["admin"]);
+    const parsed = generationSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return invalid(parsed.error);
+    const enabled = parsed.data.enabled === "1";
+
+    const { error } = await createAdminClient()
+      .from("settings")
+      .upsert({ key: "generation_enabled", value: enabled }, { onConflict: "key" });
+    if (error) throw new Error(`set generation_enabled failed (${error.code})`);
+
+    await audit({ actorId: user.id, action: "settings.generation", meta: { enabled } });
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return fail(error, "setGenerationEnabled");
+  }
+}
+
+// пустое поле — без лимита (null)
+const optionalLimit = (max: number) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), z.coerce.number().int().min(0).max(max).nullable());
+
+const staffLimitsSchema = z.object({
+  staff_daily_credits: optionalLimit(1_000_000),
+  teacher_grant_max: optionalLimit(10_000),
+  teacher_grant_daily: optionalLimit(1_000_000),
+});
+
+/** Потолки ведущих (миграция 20261116120000_staff_caps). Действуют сразу, без деплоя. */
+export async function updateStaffLimits(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  try {
+    const user = await authorize(["admin"]);
+    const parsed = staffLimitsSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return invalid(parsed.error);
+    const limits = parsed.data;
+
+    const { error } = await createAdminClient()
+      .from("settings")
+      .upsert(
+        STAFF_LIMIT_KEYS.map((key) => ({ key, value: limits[key] })),
+        { onConflict: "key" },
+      );
+    if (error) throw new Error(`set staff limits failed (${error.code})`);
+
+    await audit({ actorId: user.id, action: "settings.staff_limits", meta: limits });
+    refresh();
+    return { ok: true };
+  } catch (error) {
+    return fail(error, "updateStaffLimits");
   }
 }

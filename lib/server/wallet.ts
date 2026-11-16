@@ -14,6 +14,8 @@ export type WalletError =
   | "insufficient_stars"
   | "group_paused"
   | "daily_cap"
+  | "staff_daily_cap"
+  | "grant_limit"
   | "generation_disabled"
   | "too_many_jobs"
   | "unknown_model"
@@ -28,6 +30,8 @@ const KNOWN: readonly WalletError[] = [
   "insufficient_stars",
   "group_paused",
   "daily_cap",
+  "staff_daily_cap",
+  "grant_limit",
   "generation_disabled",
   "too_many_jobs",
   "unknown_model",
@@ -63,6 +67,7 @@ export async function getBalance(userId: string): Promise<number> {
  * Порядок проверок в SQL: пользователь → пауза группы → дневной лимит → баланс.
  * Повтор с тем же idempotencyKey (двойной клик) вернёт ту же задачу без второго списания (reused).
  * stars = 0 — бесплатно (учитель, админ, монтаж). Цену считает prices.canUse().
+ * Ведущему и админу — дневной потолок кредитов kie (settings.staff_daily_credits → staff_daily_cap).
  */
 export async function createJobWithDebit(input: {
   userId: string;
@@ -105,6 +110,8 @@ export async function refundJob(jobId: string, reason: string): Promise<Result<{
 /**
  * Начислить (amount > 0) или снять (amount < 0) звёзды. SQL сам проверяет, что actor —
  * админ или учитель группы ученика, и пишет audit_log. До ±10000 за раз.
+ * Ведущему — не больше settings.teacher_grant_max за раз и teacher_grant_daily за сутки
+ * (grant_limit); админ может больше, превышение помечается в audit_log.
  */
 export async function grantStars(input: {
   actorId: string;
