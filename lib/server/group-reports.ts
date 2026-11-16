@@ -104,9 +104,13 @@ export async function getGroupReport(user: SessionUser, groupId: string): Promis
     ]),
   );
 
+  // Только шаги текущей версии урока: строки под старыми id заданий (после переименования)
+  // не считаем, иначе отчёт показывает «9/6». Так же считает страница урока у ученика.
+  const currentSteps = new Map(lessons.map((lesson) => [lesson.id, new Set(lessonProgressSteps(lesson.id))]));
   for (const row of progress) {
     const student = byId.get(row.user_id);
-    if (student) student.progress[row.lesson_id] = (student.progress[row.lesson_id] ?? 0) + 1;
+    if (!student || !currentSteps.get(row.lesson_id)?.has(row.step)) continue;
+    student.progress[row.lesson_id] = (student.progress[row.lesson_id] ?? 0) + 1;
   }
   let quizBonus = 0;
   for (const row of attempts) {

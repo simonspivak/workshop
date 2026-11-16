@@ -19,7 +19,10 @@ const schema = z.object({
 });
 
 const WRONG = "Логин или пароль неверны.";
-const TOO_MANY = "Слишком много попыток. Подождите пару минут и попробуйте снова.";
+// Окно наших счётчиков — 15 минут (LOGIN_LIMITS); ведущий может выдать новый пароль — это снимает счётчик логина
+const TOO_MANY = "Слишком много попыток входа. Подождите до 15 минут и попробуйте снова или попросите ведущего помочь.";
+// 429 от самого Supabase Auth: его общий лимит на IP сервера, обычно отпускает быстро
+const AUTH_BUSY = "Сервер входа перегружен. Подождите минуту и попробуйте снова.";
 
 /** Только свои пути кабинета: защита от open redirect через ?next=. */
 function safeNext(next: string | undefined): string | null {
@@ -41,7 +44,10 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 
   // Защита от перебора паролей: лимит попыток с IP и на логин (Supabase видит только IP сервера)
   const ip = ipRateLimitKey(clientIp(await headers()) ?? "unknown");
-  if (!(await takeAttempt(LOGIN_LIMITS.ip, ip)) || !(await takeAttempt(LOGIN_LIMITS.account, email))) {
+  const ipAllowed = await takeAttempt(LOGIN_LIMITS.ip, ip);
+  if (!ipAllowed || !(await takeAttempt(LOGIN_LIMITS.account, email))) {
+    // Без логина и IP: только какой счётчик сработал
+    console.warn("login: rate limit exhausted", { purpose: (ipAllowed ? LOGIN_LIMITS.account : LOGIN_LIMITS.ip).purpose });
     return { error: TOO_MANY };
   }
 
@@ -49,14 +55,18 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   const { data, error } = await supabase.auth.signInWithPassword({ email, password: parsed.data.password });
   if (error || !data.user) {
     // Общий текст: по ответу нельзя узнать, существует ли логин
-    if (error?.status === 429) return { error: TOO_MANY };
+    if (error?.status === 429) {
+      console.warn("login: supabase auth 429", { code: error.code });
+      return { error: AUTH_BUSY };
+    }
     return { error: WRONG };
   }
   await resetAttempts(LOGIN_LIMITS.account, email);
 
   const { data: profile } = await supabase.from("profiles").select("role, disabled").eq("id", data.user.id).maybeSingle();
   if (!profile || profile.disabled) {
-    await supabase.auth.signOut();
+    // Отключённый аккаунт — выход со всех устройств (намеренно global)
+    await supabase.auth.signOut({ scope: "global" });
     return { error: "Аккаунт отключён. Обратитесь к ведущему." };
   }
 
@@ -66,7 +76,8 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 export async function logout(): Promise<void> {
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
-    await supabase.auth.signOut();
+    // «Выйти» — только на этом устройстве; по умолчанию auth-js выходит со всех (scope: "global")
+    await supabase.auth.signOut({ scope: "local" });
   }
   redirect("/login");
 }
