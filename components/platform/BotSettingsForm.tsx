@@ -200,7 +200,7 @@ export function BotSettingsForm({
           checked={useKnowledge}
           onChange={setUseKnowledge}
           title="Ответы по моему тексту"
-          text="Бот отвечает о фактах только по этому тексту. Чего здесь нет — честно говорит «не знаю»."
+          text="Бот отвечает о фактах только по этому тексту. Чего здесь нет — честно говорит «не знаю». Всё, что здесь написано, бот может пересказать любому гостю: только то, что можно знать всем."
         >
           <div className="flex justify-end">
             <span className="font-mono text-xs text-ink-soft">

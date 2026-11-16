@@ -45,8 +45,9 @@ import { spendStars } from "@/lib/server/wallet";
     6. Промпт: правила + характер + инструменты + знания + последние 10 сообщений → шлюз (claude-haiku-5-5),
        не больше 2 попыток модели: публичный запрос не держится ~50 с, если шлюз сбоит.
     7. Списание 1★ с ключом идемпотентности входящего сообщения (повтор не списывает).
-    8. Служебные строки [[ЗАЯВКА]] / [[ОТКРЫТКА]] вырезаются; заявка проверяется по форме и
-       пишется в bot_leads (бот её прочитать не может). Ответ проверяется на утечку характера.
+    8. Служебные строки [[ЗАЯВКА]] / [[ОТКРЫТКА]] вырезаются; заявка проверяется по форме (без ссылок,
+       стоп-слов и управляющих символов) и пишется в bot_leads (бот её прочитать не может).
+       Ответ проверяется на утечку характера.
   Ведущие и админы отвечают бесплатно (демо-режим), но с журналом сообщений.
 */
 
@@ -88,6 +89,7 @@ export const BOT_TEXTS = {
   neutral: "Давайте поговорим о чём-нибудь другом.",
   secret: "Это мой маленький секрет. Давайте лучше о другом.",
   leadInvalid: "(Заявка не сохранилась: не хватает данных. Давайте проверим ещё раз.)",
+  leadLink: "(Заявка не сохранилась: в ней ссылка. Напишите без ссылок — ник в Telegram можно.)",
   leadLimit: "(Заявок на сегодня уже много. Попробуйте завтра.)",
 } as const;
 
@@ -264,6 +266,7 @@ export async function completeMessage(input: BrainInput, messageId: number): Pro
 
   // Заявка: только запись
   let lead: LeadOutcome = null;
+  let leadNote: string = BOT_TEXTS.leadInvalid;
   if (parsed.lead !== undefined && bot.tools.leads && bot.tools.leadForm) {
     const validation = validateLead(bot.tools.leadForm, parsed.lead, {
       allowContact: adult,
@@ -271,6 +274,7 @@ export async function completeMessage(input: BrainInput, messageId: number): Pro
     });
     if (!validation.ok) {
       lead = "invalid";
+      if (validation.reason === "link") leadNote = BOT_TEXTS.leadLink;
     } else {
       const counts = await countLeads(bot.id, input.conversationId);
       if (
@@ -290,7 +294,7 @@ export async function completeMessage(input: BrainInput, messageId: number): Pro
       }
     }
   }
-  if (lead === "invalid") text = `${text}\n\n${BOT_TEXTS.leadInvalid}`;
+  if (lead === "invalid") text = `${text}\n\n${leadNote}`;
   if (lead === "limit") text = `${text}\n\n${BOT_TEXTS.leadLimit}`;
 
   // Открытка: только предложение. Звёзды спишутся, когда гость нажмёт кнопку
@@ -330,6 +334,8 @@ async function notifyOwner(bot: BotRecord, leadId: string, data: LeadData, chann
     const lines = Object.entries(data).map(([key, value]) => `${key}: ${value}`);
     const text = [
       `Новая заявка — бот «${bot.name}»${bot.tools.leadForm ? `, форма «${bot.tools.leadForm.title}»` : ""}`,
+      // Аудит № 48: значения написал гость; ссылки и стоп-слова платформа отсекла, остальное — как есть
+      "Данные написал гость — проверьте их, прежде чем звонить или писать.",
       ...lines,
       `Откуда: ${CHANNEL_LABELS[channel]}`,
     ].join("\n");

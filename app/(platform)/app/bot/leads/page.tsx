@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Download } from "lucide-react";
-import { getMyBotSummary, listMyLeads } from "@/lib/server/bot/dal";
+import { getMyBotSummary, LEADS_PAGE, listMyLeads } from "@/lib/server/bot/dal";
 import { requireUser } from "@/lib/server/dal/auth";
 import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 import { BotNav } from "@/components/platform/BotNav";
@@ -54,6 +54,11 @@ async function BotLeads() {
             </a>
             <span className="text-sm text-ink-soft">Открывается в Excel, Google Таблицах и Numbers.</span>
           </div>
+          {result.total > result.leads.length && (
+            <Notice>
+              Показаны последние {LEADS_PAGE} из {result.total}. Все заявки — в CSV.
+            </Notice>
+          )}
           <Notice>На уроке — только выдуманные данные. После события заявки с настоящими контактами лучше удалить.</Notice>
 
           {/* Телефон: карточки */}

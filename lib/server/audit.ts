@@ -31,6 +31,8 @@ export type AuditAction =
   | "bot.update"
   | "bot.leads_export"
   | "bot.telegram_retired"
+  // ответ бота в Telegram не доставлен после повтора (аудит № 49): ключ списания — для компенсации
+  | "bot.telegram_send_failed"
   // пауза бота владельцем (аудит 8 ноября, № 9)
   | "bot.pause"
   | "bot.resume"
