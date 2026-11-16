@@ -49,17 +49,31 @@ export const GATEWAY_SCHEDULE: Record<JobPollClass, GatewaySchedule> = {
   lipsync: { firstCheckSec: 60, steps: [{ untilMs: 5 * MINUTE, everySec: 15 }, { untilMs: Infinity, everySec: 30 }] },
 };
 
+/**
+ * Задача с обратным вызовом (jobs.params.callback): о готовности сообщает kie (POST /api/jobs/callback),
+ * опрос — запасной путь на случай, если вызов потерялся. Поэтому проверки реже, но не реже раза
+ * в 60 с: потерянный вызов задерживает результат не больше чем на минуту против обычного расписания.
+ * Проверки по самому вызову это расписание не ограничивает.
+ */
+export const GATEWAY_SCHEDULE_WITH_CALLBACK: Record<JobPollClass, GatewaySchedule> = {
+  fast: { firstCheckSec: 15, steps: [{ untilMs: 3 * MINUTE, everySec: 15 }, { untilMs: Infinity, everySec: 30 }] },
+  music: { firstCheckSec: 30, steps: [{ untilMs: 3 * MINUTE, everySec: 20 }, { untilMs: Infinity, everySec: 30 }] },
+  video: { firstCheckSec: 60, steps: [{ untilMs: 6 * MINUTE, everySec: 30 }, { untilMs: Infinity, everySec: 60 }] },
+  lipsync: { firstCheckSec: 60, steps: [{ untilMs: 5 * MINUTE, everySec: 30 }, { untilMs: Infinity, everySec: 60 }] },
+};
+
 function stepFor(steps: Step[], ageMs: number): number {
   return (steps.find((step) => ageMs < step.untilMs) ?? steps[steps.length - 1]).everySec;
 }
 
 /**
  * Минимальная пауза (секунды) между проверками статуса у шлюза для задачи этого действия и возраста.
+ * options.callback — задача создана с обратным вызовом: таблица GATEWAY_SCHEDULE_WITH_CALLBACK.
  * Пока задача моложе firstCheckSec, возвращает firstCheckSec: mark_job_submitted ставит
  * last_polled_at = submitted_at, поэтому claim_job_poll не пропустит проверку раньше срока.
  */
-export function gatewayPollIntervalSec(action: JobAction, ageMs: number): number {
-  const schedule = GATEWAY_SCHEDULE[jobPollClass(action)];
+export function gatewayPollIntervalSec(action: JobAction, ageMs: number, options: { callback?: boolean } = {}): number {
+  const schedule = (options.callback ? GATEWAY_SCHEDULE_WITH_CALLBACK : GATEWAY_SCHEDULE)[jobPollClass(action)];
   const age = Math.max(0, ageMs);
   return age < schedule.firstCheckSec * SECOND ? schedule.firstCheckSec : stepFor(schedule.steps, age);
 }

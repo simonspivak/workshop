@@ -12,7 +12,7 @@ import { mockMedia, type MockMediaKind } from "@/lib/server/mock-media";
 
   Ответы шлюза:
     text            → { ok, text, credits }
-    image … music   → { ok, taskId, state: 'queued' }
+    image … music   → { ok, taskId, state: 'queued' }  (в запросе — jobId и, если есть, callbackUrl)
     status          → { ok, state, done, urls[], credits, error, lastFrame }
     balance         → { ok, credits }
   Ошибка → { ok: false, error, httpStatus?, kieCode?, uncertain? }. Для ошибок сети и таймаутов
@@ -306,6 +306,12 @@ export type CreateTaskOptions = GatewayCallOptions & {
    * По нему шлюз может не создавать у kie вторую задачу и найти потерянный taskId (docs/kie-gateway.md).
    */
   jobId?: string;
+  /**
+   * Адрес обратного вызова «задача закончилась» (lib/server/job-callback.ts): уходит в шлюз полем
+   * callbackUrl, шлюз передаёт его kie как callBackUrl (docs/kie-gateway.md, «Обратный вызов»).
+   * Нет — поля в запросе нет, задачу ведёт только опрос.
+   */
+  callbackUrl?: string;
 };
 
 /** Синхронный текст (Claude Haiku по умолчанию). При перегрузке kie — повторы и запасная модель. */
@@ -336,7 +342,11 @@ export async function createTask(request: TaskRequest, options: CreateTaskOption
   const config = gatewayConfig();
   if (config.mode === "mock") return mockCreate(request);
   const clock = options.clock ?? realClock;
-  const payload: Record<string, unknown> = { ...request, ...(options.jobId ? { jobId: options.jobId } : {}) };
+  const payload: Record<string, unknown> = {
+    ...request,
+    ...(options.jobId ? { jobId: options.jobId } : {}),
+    ...(options.callbackUrl ? { callbackUrl: options.callbackUrl } : {}),
+  };
   return withRetries<CreateTaskResult>(
     RETRY_BUDGET_MS.create,
     4,

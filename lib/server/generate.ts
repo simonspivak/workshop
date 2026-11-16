@@ -16,6 +16,7 @@ import {
   type TaskRequest,
   type VideoRequest,
 } from "@/lib/server/gateway";
+import { callbackPlanned, jobCallbackUrl } from "@/lib/server/job-callback";
 import { loadJob, toJobView } from "@/lib/server/job-progress";
 import { jobErrorCode, refundReason, type JobErrorCode } from "@/lib/server/job-rules";
 import { completeJob, markJobSubmitted } from "@/lib/server/jobs";
@@ -277,7 +278,8 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
     model: decision.model,
     stars: decision.stars,
     idempotencyKey: input.idempotencyKey,
-    params: jobParams(input, references.refs.stored),
+    // callback: шлюзу уйдёт адрес обратного вызова — опрос этой задачи пойдёт по редкому расписанию
+    params: { ...jobParams(input, references.refs.stored), ...(callbackPlanned(input.action) ? { callback: true } : {}) },
     prompt: input.action === "voice" ? input.text : (input.prompt ?? null),
     lessonId: input.lessonId ?? null,
     taskRef: input.taskId ?? null,
@@ -390,7 +392,8 @@ async function runText(
 }
 
 async function submitTask(jobId: string, balance: number, request: TaskRequest): Promise<GenerateOutcome> {
-  const result = await createTask(request, { jobId });
+  const callbackUrl = jobCallbackUrl(jobId, request.action) ?? undefined;
+  const result = await createTask(request, { jobId, callbackUrl });
   if (result.ok) {
     const marked = await markJobSubmitted(jobId, result.taskId);
     if (!marked) console.error("generate: job left the queue before submit", { jobId });
