@@ -22,6 +22,7 @@ import { jobErrorCode, refundReason, type JobErrorCode } from "@/lib/server/job-
 import { completeJob, markJobSubmitted } from "@/lib/server/jobs";
 import type { ReferenceInput } from "@/lib/server/media-refs";
 import { moderateFields } from "@/lib/server/moderation";
+import { checkMotionDriver } from "@/lib/server/motion-driver";
 import { canUse, LONG_TEXT_TOKENS } from "@/lib/server/prices";
 import { checkStudentLipsyncAudio, resolveReferences } from "@/lib/server/storage";
 import type { Json } from "@/lib/server/supabase/types";
@@ -34,7 +35,8 @@ import type { ErrorCode } from "@/lib/platform/messages";
   POST /api/generate (docs/platform/spec.md §3). Порядок проверок:
     1) вход, роль и возраст против прайса (canUse);
     2) модерация текста (стоп-слова, личные данные);
-    3) референсы: только свои файлы из Storage → подписанные ссылки на час;
+    3) референсы: только свои файлы из Storage → подписанные ссылки на час; для motion — длина
+       образца по заголовку MP4 (lib/server/motion-driver.ts, потолок MOTION_DRIVER_MAX_SEC);
     4) пауза группы, дневной лимит, баланс и списание — одной SQL-транзакцией (create_job);
     5) отправка в шлюз. Текст — синхронно, остальное — задача, которую опрашивает GET /api/jobs/[id].
   Повтор с тем же idempotencyKey (двойной клик) не списывает дважды и не отправляет в шлюз второй раз.
@@ -160,6 +162,8 @@ const WALLET_STATUS: Record<WalletError, number> = {
  * аудио, а цена в звёздах одна. Реплики в уроке — до 10 слов. Ведущему — как в схеме (2000).
  */
 const STUDENT_VOICE_MAX_CHARS = 600;
+// Другие потолки по длине: образец переноса движения — MOTION_DRIVER_MAX_SEC (10 с,
+// lib/platform/generation-types.ts), озвучка для «говорящей головы» — STUDENT_LIPSYNC_MAX_SEC (storage.ts).
 
 const HISTORY_CHAR_LIMIT = 13_000; // + новое сообщение (до MAX_PROMPT) укладывается в лимит шлюза 20 000
 
@@ -270,6 +274,17 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
   if (!staff && input.action === "lipsync" && !(await checkStudentLipsyncAudio(references.refs.stored.audio ?? ""))) {
     return { kind: "error", status: 403, error: "lipsync_audio", field: "audio" };
   }
+  // Перенос движения: kie берёт кредиты за каждую секунду образца — длину проверяем до списания
+  let driverSeconds: number | null = null;
+  if (input.action === "motion") {
+    const driver = await checkMotionDriver({
+      staff,
+      path: references.refs.stored.video ?? "",
+      url: references.refs.urls.video ?? "",
+    });
+    if (!driver.ok) return { kind: "error", status: 422, error: driver.error, field: "video" };
+    driverSeconds = driver.seconds;
+  }
 
   // 4. списание (пауза, лимит, баланс — в SQL)
   const created = await createJobWithDebit({
@@ -279,7 +294,12 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
     stars: decision.stars,
     idempotencyKey: input.idempotencyKey,
     // callback: шлюзу уйдёт адрес обратного вызова — опрос этой задачи пойдёт по редкому расписанию
-    params: { ...jobParams(input, references.refs.stored), ...(callbackPlanned(input.action) ? { callback: true } : {}) },
+    params: {
+      ...jobParams(input, references.refs.stored),
+      ...(callbackPlanned(input.action) ? { callback: true } : {}),
+      // длина образца движения: по ней видно, сколько кредитов kie ушло на задачу
+      ...(driverSeconds !== null ? { driverSeconds: Math.round(driverSeconds * 100) / 100 } : {}),
+    },
     prompt: input.action === "voice" ? input.text : (input.prompt ?? null),
     lessonId: input.lessonId ?? null,
     taskRef: input.taskId ?? null,

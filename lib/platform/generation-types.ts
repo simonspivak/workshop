@@ -51,7 +51,47 @@ export type MediaOption = {
   action?: JobAction;
   /** звук: начало реплики или название трека — чтобы выбирать не вслепую */
   text?: string;
+  /**
+   * Образец движения из библиотеки: длина в секундах по заголовку MP4 (lib/server/motion-driver.ts).
+   * null — длину узнать не удалось; поля нет — не проверяли (не библиотека).
+   */
+  seconds?: number | null;
 };
+
+// ---------- перенос движения: длина образца ----------
+
+/**
+ * Потолок длины видео-образца (драйвера) для переноса движения, секунды. kie (kling-2.6/motion-control)
+ * берёт кредиты за каждую секунду образца и отдаёт ролик той же длины, а цена в звёздах одна
+ * (docs/platform/spec.md §3, «Цена и длина»). Проверяет сервер до списания (lib/server/motion-driver.ts),
+ * плитка образца в форме показывает длину и гасится, если образец длиннее.
+ */
+export const MOTION_DRIVER_MAX_SEC = 10;
+/** Допуск к потолку: ролик, обрезанный до 10 с, бывает 10,0–10,1 с из-за последнего кадра и звука. */
+export const MOTION_DRIVER_TOLERANCE_SEC = 0.5;
+
+export type MotionDriverVerdict = "ok" | "too_long" | "unknown";
+
+/**
+ * Можно ли брать образец такой длины. Длиннее потолка — нельзя никому. seconds null — длина
+ * неизвестна: можно (см. MOTION_DRIVER_BLOCK_UNKNOWN), сервер пишет предупреждение в лог.
+ */
+/**
+ * Запрещать ли ученику образец, длину которого не удалось измерить. Выключено: библиотеку наполняет
+ * ведущий, а измерение зависит от ответа Storage на Range-запросы — сбой измерения не должен
+ * выключать «Перенос движения» всей группе. Включить, когда на проде видно, что длина меряется стабильно.
+ */
+export const MOTION_DRIVER_BLOCK_UNKNOWN = false;
+
+export function motionDriverVerdict(seconds: number | null | undefined, staff: boolean): MotionDriverVerdict {
+  if (seconds === null || seconds === undefined) return staff || !MOTION_DRIVER_BLOCK_UNKNOWN ? "ok" : "unknown";
+  return seconds > MOTION_DRIVER_MAX_SEC + MOTION_DRIVER_TOLERANCE_SEC ? "too_long" : "ok";
+}
+
+/** «10 с», «7 с»: длина образца на плитке. */
+export function formatDriverSeconds(seconds: number): string {
+  return `${Math.max(1, Math.round(seconds))} с`;
+}
 
 export const jobActionLabels: Record<JobAction, string> = {
   text: "Текст",

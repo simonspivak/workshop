@@ -5,7 +5,14 @@ import { Check, Link2, Music, X } from "lucide-react";
 import { PlayButton, useAudioPreview } from "@/components/platform/AudioPreview";
 import { useReferenceTray } from "@/components/platform/GenerateClient";
 import { buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
-import type { JobAction, MediaKind, MediaOption } from "@/lib/platform/generation-types";
+import {
+  formatDriverSeconds,
+  MOTION_DRIVER_MAX_SEC,
+  motionDriverVerdict,
+  type JobAction,
+  type MediaKind,
+  type MediaOption,
+} from "@/lib/platform/generation-types";
 
 /**
  * Выбор файлов из своей галереи (и библиотеки курса) для референсов.
@@ -14,6 +21,8 @@ import type { JobAction, MediaKind, MediaOption } from "@/lib/platform/generatio
  * известной задачи (библиотека курса, старые отметки в галерее) тогда не показываются.
  * Звук (озвучка, музыка) можно послушать до выбора: кнопка «Послушать» на плитке, один плеер
  * на панель — новый включился, старый замолчал; панель закрылась — звук остановился.
+ * Образцы движения из библиотеки показывают длину («10 с»). Длиннее MOTION_DRIVER_MAX_SEC — плитка
+ * погашена и подписана: сервер такой образец не пустит. Длина неизвестна — погашена только у ученика.
  */
 export function GenerateReferencePicker({
   label,
@@ -26,6 +35,7 @@ export function GenerateReferencePicker({
   onChange,
   allowUrl = false,
   emptyText,
+  staff = false,
 }: {
   label: string;
   hint?: string;
@@ -37,6 +47,8 @@ export function GenerateReferencePicker({
   onChange: (paths: string[]) => void;
   allowUrl?: boolean;
   emptyText?: string;
+  /** ведущий: образец неизвестной длины можно выбрать (он проверяет новые образцы) */
+  staff?: boolean;
 }) {
   const id = useId();
   const tray = useReferenceTray();
@@ -78,7 +90,8 @@ export function GenerateReferencePicker({
             const order = value.indexOf(option.path) + 1;
             const audio = option.kind === "audio";
             const label = trayPaths.has(option.path) && !known.has(option.path) ? "Из галереи" : option.label;
-            const title = audio && option.text ? `${option.text} — ${label}` : label;
+            const blocked = driverBlock(option, staff);
+            const title = blocked ?? (audio && option.text ? `${option.text} — ${label}` : label);
             return (
               // кнопка «Послушать» — сосед кнопки выбора, не внутри: вложенные кнопки недопустимы,
               // и клик по плееру не должен менять выбор
@@ -87,12 +100,20 @@ export function GenerateReferencePicker({
                   type="button"
                   onClick={() => toggle(option.path)}
                   aria-pressed={selected}
+                  disabled={Boolean(blocked) && !selected}
                   title={title}
                   className={`relative flex h-32 flex-col overflow-hidden rounded-2xl bg-lavender text-left ring-2 transition-shadow ${
                     audio ? "w-40" : "w-24"
-                  } ${selected ? "ring-violet" : "ring-transparent hover:ring-glow"}`}
+                  } ${selected ? "ring-violet" : "ring-transparent hover:ring-glow"} ${
+                    blocked ? "cursor-not-allowed opacity-50 grayscale hover:ring-transparent" : ""
+                  }`}
                 >
                   <Thumb option={option} />
+                  {typeof option.seconds === "number" && (
+                    <span className="absolute top-1.5 left-1.5 rounded-full bg-ink/75 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                      {formatDriverSeconds(option.seconds)}
+                    </span>
+                  )}
                   <span className="bg-white/90 px-1.5 py-1 text-[11px] leading-tight">
                     {audio && option.text ? (
                       <>
@@ -102,6 +123,7 @@ export function GenerateReferencePicker({
                     ) : (
                       <span className="line-clamp-2">{label}</span>
                     )}
+                    {blocked && <span className="block font-semibold text-ink">{blocked}</span>}
                   </span>
                   {selected && (
                     <span className="absolute top-1.5 right-1.5 inline-flex size-6 items-center justify-center rounded-full bg-violet font-mono text-xs text-white">
@@ -163,6 +185,15 @@ export function GenerateReferencePicker({
       )}
     </fieldset>
   );
+}
+
+/** Почему образец движения нельзя выбрать (подпись на плитке) или null. */
+function driverBlock(option: MediaOption, staff: boolean): string | null {
+  if (option.seconds === undefined) return null;
+  const verdict = motionDriverVerdict(option.seconds, staff);
+  if (verdict === "too_long") return `Длиннее ${MOTION_DRIVER_MAX_SEC} с`;
+  if (verdict === "unknown") return "Длина не проверена";
+  return null;
 }
 
 function Thumb({ option }: { option: MediaOption }) {

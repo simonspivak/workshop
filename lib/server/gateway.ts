@@ -2,6 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { deadlineSignal } from "@/lib/server/deadline";
 import { gatewayConfig } from "@/lib/server/env";
+import { MEDIA_FILE_MAX_BYTES } from "@/lib/server/media-refs";
 import { mockMedia, type MockMediaKind } from "@/lib/server/mock-media";
 
 /*
@@ -403,7 +404,11 @@ export async function getGatewayBalance(): Promise<BalanceResult> {
 /** Хосты, с которых можно скачивать результаты kie. Единственное место со списком. */
 export const KIE_RESULT_HOSTS = ["aiquickdraw.com", "redpandaai.co"] as const;
 
-export const MAX_RESULT_BYTES = 100 * 1024 * 1024;
+/**
+ * Больше бакет media не примет (50 МиБ, media-refs.ts MEDIA_FILE_MAX_BYTES): такой файл не качаем.
+ * Content-Length больше лимита — too_large сразу, без скачивания; звёзды возвращаются тем же опросом.
+ */
+export const MAX_RESULT_BYTES = MEDIA_FILE_MAX_BYTES;
 
 const RESULT_TYPES = {
   "image/jpeg": "jpg",

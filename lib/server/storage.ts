@@ -4,6 +4,7 @@ import { MEDIA_BUCKET } from "@/lib/server/jobs";
 import {
   classifyReferences,
   isLibraryPath,
+  MEDIA_FILE_MAX_BYTES,
   mediaKindOfPath,
   parseJobMediaPath,
   type ReferenceInput,
@@ -101,6 +102,11 @@ export async function uploadMedia(
     console.error("storage.uploadMedia: no time left");
     return { ok: false, error: "upload_failed" };
   }
+  // бакет всё равно откажет (file_size_limit): не тратим время на загрузку, звёзды вернутся сразу
+  if (bytes.byteLength > MEDIA_FILE_MAX_BYTES) {
+    console.error("storage.uploadMedia: too large", { bytes: bytes.byteLength });
+    return { ok: false, error: "too_large" };
+  }
   const client = options.deadline === undefined ? createAdminClient() : createAdminClientUntil(options.deadline);
   let error: { message: string; statusCode?: string | number } | null;
   try {
@@ -119,8 +125,16 @@ export async function uploadMedia(
   return { ok: false, error: tooLarge ? "too_large" : "upload_failed" };
 }
 
+export type LibraryFile = {
+  path: string;
+  name: string;
+  kind: MediaKind;
+  /** updated_at и размер из Storage: меняются, когда файл перезалили (ключ кеша длины образца) */
+  version: string | null;
+};
+
 /** Файлы библиотеки курса в папке (только файлы с понятным типом). */
-export async function listLibrary(folder: string): Promise<{ path: string; name: string; kind: MediaKind }[]> {
+export async function listLibrary(folder: string): Promise<LibraryFile[]> {
   const { data, error } = await createAdminClient()
     .storage.from(MEDIA_BUCKET)
     .list(folder, { limit: 100, sortBy: { column: "name", order: "asc" } });
@@ -130,8 +144,18 @@ export async function listLibrary(folder: string): Promise<{ path: string; name:
   }
   return (data ?? [])
     .filter((item) => item.id && !item.name.startsWith("."))
-    .map((item) => ({ path: `${folder}/${item.name}`, name: item.name, kind: mediaKindOfPath(item.name) }))
-    .filter((item): item is { path: string; name: string; kind: MediaKind } => item.kind !== null);
+    .map((item) => ({
+      path: `${folder}/${item.name}`,
+      name: item.name,
+      kind: mediaKindOfPath(item.name),
+      version: fileVersion(item.updated_at, (item.metadata as { size?: unknown } | null)?.size),
+    }))
+    .filter((item): item is LibraryFile => item.kind !== null);
+}
+
+function fileVersion(updatedAt: unknown, size: unknown): string | null {
+  if (typeof updatedAt !== "string" || !updatedAt) return null;
+  return `${updatedAt}|${typeof size === "number" ? size : ""}`;
 }
 
 // ---------- референсы для шлюза ----------

@@ -220,14 +220,16 @@ export async function storeJobResult(
           console.error("jobProgress.store: download failed, will retry", { jobId: job.id });
           return;
         }
-        await refundJob(job.id, refundReason("result_unavailable", file.error));
+        // too_large — по Content-Length, до скачивания: возврат сразу, а не после часа повторов
+        const code = file.error === "too_large" ? "result_too_large" : "result_unavailable";
+        await refundJob(job.id, refundReason(code, file.error));
         return;
       }
       const path = mediaPath(job.user_id, job.id, file.ext, stored.length);
       const upload = await uploadMedia(path, file.bytes, file.contentType, { deadline });
       if (!upload.ok) {
         if (!required) continue;
-        if (upload.error === "too_large") await refundJob(job.id, refundReason("result_unavailable", "too_large"));
+        if (upload.error === "too_large") await refundJob(job.id, refundReason("result_too_large", "upload too_large"));
         return;
       }
       stored.push({ path, contentType: file.contentType });

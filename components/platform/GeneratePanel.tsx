@@ -19,6 +19,8 @@ import {
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import {
   ASPECT_RATIOS,
+  MOTION_DRIVER_MAX_SEC,
+  motionDriverVerdict,
   VOICE_OPTIONS,
   type AspectRatio,
   type GenerateActionOption,
@@ -86,6 +88,8 @@ export function GeneratePanel({
   const action = option.action;
   const tray = useReferenceTray();
   const driverOptions = staff ? [...library, ...references.filter((r) => r.kind === "video")] : library;
+  // образец длиннее потолка (а ученику — и неизвестной длины) из сохранённой формы не подставляем
+  const usableDrivers = driverOptions.filter((r) => r.seconds === undefined || motionDriverVerdict(r.seconds, staff) === "ok");
   // Настройки формы (голос, манера, формат, выбранные файлы…) живут в sessionStorage по ключу
   // урок:задание:действие: переключение на соседнюю кнопку (скопировать промпт) и обратно
   // монтирует панель заново, а форма остаётся. Панель монтируется только в браузере — читаем сразу.
@@ -96,7 +100,7 @@ export function GeneratePanel({
       defaultModel: option.model,
       longVideo: action === "video" && option.longStars !== null,
       imagePaths: [...references.filter((r) => r.kind === "image"), ...tray.items.filter((t) => t.kind === "image")].map((r) => r.path),
-      videoPaths: [...driverOptions, ...(staff ? tray.items.filter((t) => t.kind === "video") : [])].map((r) => r.path),
+      videoPaths: [...usableDrivers, ...(staff ? tray.items.filter((t) => t.kind === "video") : [])].map((r) => r.path),
       audioPaths: [...references.filter((r) => r.kind === "audio"), ...tray.items.filter((t) => t.kind === "audio")].map((r) => r.path),
       maxImages: (referenceMode) => (action === "image_edit" ? 4 : action === "video" ? (referenceMode ? 4 : 2) : 1),
     }),
@@ -334,13 +338,18 @@ export function GeneratePanel({
       {action === "motion" && (
         <GenerateReferencePicker
           label="Движение"
-          hint={staff ? "Драйвер из библиотеки курса, свой клип или ссылка." : "Драйверы из библиотеки курса: танец, походка, жест."}
+          hint={
+            staff
+              ? `Драйвер из библиотеки курса, свой клип или ссылка. Не длиннее ${MOTION_DRIVER_MAX_SEC} секунд.`
+              : `Драйверы из библиотеки курса: танец, походка, жест. Не длиннее ${MOTION_DRIVER_MAX_SEC} секунд.`
+          }
           kind="video"
           options={driverOptions}
           max={1}
           value={driver}
           onChange={(paths) => patch({ driver: paths })}
           allowUrl={staff}
+          staff={staff}
           emptyText="Библиотека движений пока пуста."
         />
       )}

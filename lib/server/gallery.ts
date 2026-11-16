@@ -5,6 +5,7 @@ import { audit } from "@/lib/server/audit";
 import { JOB_COLUMNS, toJobViews, type JobRecord } from "@/lib/server/job-progress";
 import { MEDIA_BUCKET } from "@/lib/server/jobs";
 import { mediaKindOfPath } from "@/lib/server/media-refs";
+import { libraryDriverSeconds } from "@/lib/server/motion-driver";
 import { forgetSignedUrls, listLibrary, MOTION_LIBRARY_FOLDER, signMediaPaths } from "@/lib/server/storage";
 import { lineText } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
@@ -370,14 +371,24 @@ function audioText(action: JobAction, params: Json, prompt: string | null): stri
   return raw ? (raw.length > 120 ? `${raw.slice(0, 119)}…` : raw) : undefined;
 }
 
-/** Драйверы движения из библиотеки курса (для motion). */
+/**
+ * Драйверы движения из библиотеки курса (для motion) с длиной каждого образца: плитка показывает
+ * «10 с» и гасится, если образец длиннее потолка (lib/server/motion-driver.ts).
+ */
 export async function listMotionLibrary(): Promise<MediaOption[]> {
   const files = (await listLibrary(MOTION_LIBRARY_FOLDER)).filter((file) => file.kind === "video");
   const signed = await signMediaPaths(files.map((file) => file.path));
-  return files.flatMap((file) => {
+  const listed = files.flatMap((file) => {
     const url = signed.get(file.path);
-    return url
-      ? [{ path: file.path, url, kind: file.kind, label: file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " "), library: true }]
-      : [];
+    return url ? [{ file, url }] : [];
   });
+  const seconds = await libraryDriverSeconds(listed.map(({ file, url }) => ({ path: file.path, url, version: file.version })));
+  return listed.map(({ file, url }) => ({
+    path: file.path,
+    url,
+    kind: file.kind,
+    label: file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " "),
+    library: true,
+    seconds: seconds.get(file.path) ?? null,
+  }));
 }
