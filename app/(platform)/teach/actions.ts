@@ -3,11 +3,12 @@
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { assignLogins, generatePassword, studentEmail, GROUP_CODE_RE } from "@/lib/server/accounts";
+import { assignLogins, generatePassword, loginToEmail, studentEmail, GROUP_CODE_RE } from "@/lib/server/accounts";
 import { audit } from "@/lib/server/audit";
 import { AuthError, authorize, STAFF_ROLES } from "@/lib/server/dal/auth";
 import { assertTeachesGroup, assertTeachesStudent } from "@/lib/server/dal/teacher";
 import { ConfigError } from "@/lib/server/env";
+import { LOGIN_LIMITS, resetAttempts } from "@/lib/server/rate-limit";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { grantStars } from "@/lib/server/wallet";
 import type { ActionResult, ErrorCode } from "@/lib/platform/messages";
@@ -307,6 +308,9 @@ export async function resetStudentPassword(
     const password = generatePassword();
     const { error } = await createAdminClient().auth.admin.updateUserById(student.id, { password });
     if (error) throw new Error(`reset password failed (${error.status})`);
+    // Новый пароль снимает и блокировку входа по логину: ключ тот же, что в login (loginToEmail)
+    const accountKey = student.login ? loginToEmail(student.login) : null;
+    if (accountKey) await resetAttempts(LOGIN_LIMITS.account, accountKey);
 
     await audit({ actorId: user.id, action: "student.password_reset", targetUser: student.id, targetGroup: group.id });
     return { ok: true, login: student.login ?? "", password };
