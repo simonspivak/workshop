@@ -9,13 +9,16 @@ import {
   type ReferenceInput,
   type ReferenceSlot,
 } from "@/lib/server/media-refs";
-import { createAdminClient } from "@/lib/server/supabase/admin";
+import { MIN_STEP_MS, msLeft } from "@/lib/server/deadline";
+import { createSignedUrlCache, type SignedEntry } from "@/lib/server/signed-url-cache";
+import { createAdminClient, createAdminClientUntil } from "@/lib/server/supabase/admin";
 import type { MediaKind } from "@/lib/platform/generation-types";
 
 /*
   Приватный бакет media: загрузка результатов и подписанные ссылки. Пишет и подписывает только
   сервер (admin-клиент) и только после проверки прав в DAL.
   Ссылки живут час: этого хватает и на просмотр, и шлюзу, чтобы забрать референс.
+  Одна и та же ссылка отдаётся повторно до 45 минут (кеш инстанса), чтобы браузер брал файл из кеша.
   Библиотека курса (драйверы движения для motion) — папка library/motion/ в том же бакете,
   файлы кладёт админ через Supabase → Storage.
 */
@@ -23,14 +26,14 @@ import type { MediaKind } from "@/lib/platform/generation-types";
 export const SIGNED_URL_TTL_SEC = 60 * 60;
 export const MOTION_LIBRARY_FOLDER = "library/motion";
 
-/** Подписанные ссылки на файлы. Путь, который не удалось подписать (нет файла), в ответ не попадает. */
-export async function signMediaPaths(paths: string[], ttlSec = SIGNED_URL_TTL_SEC): Promise<Map<string, string>> {
-  const unique = [...new Set(paths.filter(Boolean))];
+// Ссылки на час переиспользуются, пока живут ещё 15+ минут (lib/server/signed-url-cache.ts)
+const signedUrls = createSignedUrlCache({ ttlSec: SIGNED_URL_TTL_SEC });
+
+async function signFresh(paths: string[], ttlSec: number): Promise<Map<string, string>> {
   const result = new Map<string, string>();
-  if (unique.length === 0) return result;
   const storage = createAdminClient().storage.from(MEDIA_BUCKET);
-  for (let i = 0; i < unique.length; i += 100) {
-    const chunk = unique.slice(i, i + 100);
+  for (let i = 0; i < paths.length; i += 100) {
+    const chunk = paths.slice(i, i + 100);
     const { data, error } = await storage.createSignedUrls(chunk, ttlSec);
     if (error) {
       console.error("storage.signMediaPaths: failed", { status: (error as { status?: number }).status });
@@ -43,14 +46,74 @@ export async function signMediaPaths(paths: string[], ttlSec = SIGNED_URL_TTL_SE
   return result;
 }
 
+export type SignOptions = {
+  /** подписать заново, мимо кеша: ссылка уходит шлюзу и должна жить полный час */
+  fresh?: boolean;
+};
+
+/**
+ * Подписанные ссылки со сроком действия. Подписывает только то, что попросили: права на пути
+ * проверяет вызывающий код ДО этого вызова, кеш права не проверяет. Ссылки на час берутся
+ * из кеша инстанса; короткие (ttlSec ≠ часу, например проверка файла сервером) и fresh
+ * подписываются каждый раз заново.
+ */
+export async function signMediaPathsWithExpiry(
+  paths: string[],
+  ttlSec = SIGNED_URL_TTL_SEC,
+  options: SignOptions = {},
+): Promise<Map<string, SignedEntry>> {
+  const unique = [...new Set(paths.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+  if (ttlSec === SIGNED_URL_TTL_SEC && !options.fresh) return signedUrls.sign(unique, signFresh);
+  const signedAt = Date.now();
+  const fresh = await signFresh(unique, ttlSec);
+  return new Map([...fresh].map(([path, url]) => [path, { url, expiresAt: signedAt + ttlSec * 1000 }]));
+}
+
+/** Подписанные ссылки на файлы. Путь, который не удалось подписать (нет файла), в ответ не попадает. */
+export async function signMediaPaths(
+  paths: string[],
+  ttlSec = SIGNED_URL_TTL_SEC,
+  options: SignOptions = {},
+): Promise<Map<string, string>> {
+  const signed = await signMediaPathsWithExpiry(paths, ttlSec, options);
+  return new Map([...signed].map(([path, entry]) => [path, entry.url]));
+}
+
+/** Файл перезаписан или удалён: старую ссылку больше не отдаём. */
+export function forgetSignedUrls(paths: string[]): void {
+  signedUrls.forget(paths);
+}
+
 export type UploadResult = { ok: true } | { ok: false; error: "too_large" | "upload_failed" };
 
-export async function uploadMedia(path: string, bytes: Uint8Array, contentType: string): Promise<UploadResult> {
-  const { error } = await createAdminClient()
-    .storage.from(MEDIA_BUCKET)
-    .upload(path, bytes, { contentType, upsert: true, cacheControl: "3600" });
+/**
+ * Положить файл в бакет media. deadline (Date.now()) — к этому сроку загрузка обрывается
+ * и считается неудачной (upload_failed): задачу потом перехватит опрос (аудит № 21).
+ */
+export async function uploadMedia(
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+  options: { deadline?: number } = {},
+): Promise<UploadResult> {
+  if (msLeft(options.deadline) < MIN_STEP_MS) {
+    console.error("storage.uploadMedia: no time left");
+    return { ok: false, error: "upload_failed" };
+  }
+  const client = options.deadline === undefined ? createAdminClient() : createAdminClientUntil(options.deadline);
+  let error: { message: string; statusCode?: string | number } | null;
+  try {
+    ({ error } = await client.storage
+      .from(MEDIA_BUCKET)
+      .upload(path, bytes, { contentType, upsert: true, cacheControl: "3600" }));
+  } catch (cause) {
+    console.error("storage.uploadMedia: threw", { aborted: cause instanceof Error && /abort|timeout/i.test(cause.name) });
+    return { ok: false, error: "upload_failed" };
+  }
+  forgetSignedUrls([path]);
   if (!error) return { ok: true };
-  const status = String((error as { statusCode?: string | number; status?: number }).statusCode ?? "");
+  const status = String(error.statusCode ?? "");
   const tooLarge = status === "413" || /maximum allowed size|too large/i.test(error.message);
   console.error("storage.uploadMedia: failed", { status, tooLarge });
   return { ok: false, error: tooLarge ? "too_large" : "upload_failed" };
@@ -124,7 +187,8 @@ export async function resolveReferences(
   }
 
   const toSign = refs.filter((ref) => ref.source !== "url").map((ref) => ref.value);
-  const signed = await signMediaPaths(toSign);
+  // шлюзу — свежая ссылка на полный час: kie может забрать референс не сразу
+  const signed = await signMediaPaths(toSign, SIGNED_URL_TTL_SEC, { fresh: true });
   const urls: ReferenceInput = {};
   const stored: ReferenceInput = {};
   for (const ref of refs) {

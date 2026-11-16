@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { fetchUntil } from "@/lib/server/deadline";
 import { supabaseSecretConfig } from "@/lib/server/env";
 import type { Database } from "./types";
 
@@ -18,6 +19,18 @@ export function createAdminClient(): SupabaseClient<Database> {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   return client;
+}
+
+/**
+ * Отдельный admin-клиент, чьи запросы обрываются к сроку deadline (Date.now()).
+ * Для загрузки результата в Storage: она должна уложиться в жизнь функции (аудит № 21).
+ */
+export function createAdminClientUntil(deadline: number): SupabaseClient<Database> {
+  const { url, secretKey } = supabaseSecretConfig();
+  return createClient<Database>(url, secretKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: fetchUntil(deadline) },
+  });
 }
 
 export type AdminClient = SupabaseClient<Database>;

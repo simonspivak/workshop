@@ -15,6 +15,9 @@ const MINUTE = 60_000;
 // (mark_job_submitted — только из того же запроса), ждать дольше незачем (аудит № 20).
 export const QUEUED_WITHOUT_TASK_LIMIT_MS = 90_000;
 export const STORING_RECLAIM_AFTER_MS = 3 * MINUTE; // как в SQL begin_job_storing
+// Опрос и копирование результата (в after()) должны уложиться в maxDuration 60 с маршрута:
+// скачивание и загрузка обрываются через столько от начала запроса (аудит № 21)
+export const JOB_REQUEST_BUDGET_MS = 55_000;
 export const SUBMITTED_HARD_LIMIT_MS = 60 * MINUTE;
 export const MAX_RESULT_FILES = 5;
 

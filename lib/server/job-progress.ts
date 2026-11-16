@@ -8,6 +8,7 @@ import {
   isPastHardLimit,
   isQueuedWithoutTaskTooLong,
   isStoringStale,
+  JOB_REQUEST_BUDGET_MS,
   jobErrorCode,
   refundReason,
   type GatewayDecision,
@@ -114,15 +115,25 @@ async function refundAndReload(job: JobRecord, reason: string): Promise<JobRecor
   return (await loadJob(job.id)) ?? job;
 }
 
+export type AdvanceOptions = {
+  /**
+   * Срок (Date.now()) для копирования результата в Storage: к нему скачивание и загрузка
+   * обрываются, задача остаётся в storing и её перехватит следующий опрос (или вернёт звёзды
+   * после часа). По умолчанию — JOB_REQUEST_BUDGET_MS от вызова; маршрут передаёт срок от начала запроса.
+   */
+  deadline?: number;
+};
+
 /**
  * Продвинуть задачу на шаг, если пора: опрос шлюза, копирование результата, возврат звёзд
  * за зависшую задачу. Возвращает актуальное состояние.
  */
-export async function advanceJob(job: JobRecord): Promise<JobRecord> {
+export async function advanceJob(job: JobRecord, options: AdvanceOptions = {}): Promise<JobRecord> {
   // Монтаж ведёт студия (загрузка из браузера), шлюз тут ни при чём
   if (job.action === "montage") return job;
 
   const now = Date.now();
+  const deadline = options.deadline ?? now + JOB_REQUEST_BUDGET_MS;
   const timing = timingOf(job);
 
   switch (job.status) {
@@ -136,7 +147,7 @@ export async function advanceJob(job: JobRecord): Promise<JobRecord> {
       if (!isGatewayCheckDue(job.last_polled_at, interval, now)) return job;
       if (!(await claimJobPoll(job.id, interval))) return job;
       const decision = decideFromGatewayStatus(timing, await getTaskStatus(job.gateway_task_id), now);
-      return applyDecision(job, decision);
+      return applyDecision(job, decision, { deadline });
     }
 
     case "storing": {
@@ -146,7 +157,7 @@ export async function advanceJob(job: JobRecord): Promise<JobRecord> {
       }
       if (!(await beginJobStoring(job.id))) return job;
       const decision = decideFromGatewayStatus(timing, await getTaskStatus(job.gateway_task_id), now);
-      return applyDecision({ ...job, status: "storing" }, decision, { alreadyClaimed: true });
+      return applyDecision({ ...job, status: "storing" }, decision, { alreadyClaimed: true, deadline });
     }
 
     default:
@@ -157,26 +168,32 @@ export async function advanceJob(job: JobRecord): Promise<JobRecord> {
 async function applyDecision(
   job: JobRecord,
   decision: GatewayDecision,
-  options: { alreadyClaimed?: boolean } = {},
+  options: { alreadyClaimed?: boolean; deadline: number },
 ): Promise<JobRecord> {
   if (decision.next === "wait") return job;
   if (decision.next === "refund") return refundAndReload(job, decision.reason);
   if (!options.alreadyClaimed && !(await beginJobStoring(job.id))) return (await loadJob(job.id)) ?? job;
-  after(() => storeJobResult(job, decision.urls, decision.credits));
+  after(() => storeJobResult(job, decision.urls, decision.credits, options.deadline));
   return { ...job, status: "storing" };
 }
 
 /**
  * Скачать результат с доменов kie и положить в media/{user_id}/{job_id}.{ext}.
  * Первый файл обязателен; остальные (второй трек Suno, последний кадр) — по возможности.
- * Сбой сети оставляет задачу в storing: через 3 минуты её перехватит следующий опрос.
+ * Сбой сети и истёкший срок deadline оставляют задачу в storing: через 3 минуты её перехватит
+ * следующий опрос, а через час от отправки опрос вернёт звёзды (job-rules: isPastHardLimit).
  */
-export async function storeJobResult(job: JobRecord, urls: string[], credits: number | null): Promise<void> {
+export async function storeJobResult(
+  job: JobRecord,
+  urls: string[],
+  credits: number | null,
+  deadline?: number,
+): Promise<void> {
   try {
     const stored: { path: string; contentType: string }[] = [];
     for (let i = 0; i < urls.length; i++) {
       const required = stored.length === 0 && i === 0;
-      const file = await downloadResult(urls[i]);
+      const file = await downloadResult(urls[i], undefined, { deadline });
       if (!file.ok) {
         if (!required) continue;
         if (file.error === "download_failed") {
@@ -187,7 +204,7 @@ export async function storeJobResult(job: JobRecord, urls: string[], credits: nu
         return;
       }
       const path = mediaPath(job.user_id, job.id, file.ext, stored.length);
-      const upload = await uploadMedia(path, file.bytes, file.contentType);
+      const upload = await uploadMedia(path, file.bytes, file.contentType, { deadline });
       if (!upload.ok) {
         if (!required) continue;
         if (upload.error === "too_large") await refundJob(job.id, refundReason("result_unavailable", "too_large"));
