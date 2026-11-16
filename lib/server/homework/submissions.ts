@@ -18,6 +18,7 @@ import {
   AI_FAILED_NOTE,
   AI_SKIPS_LARGE_NOTE,
   AI_SKIPS_MEDIA_NOTE,
+  MAX_HOMEWORK_ATTACHMENTS,
   MAX_HOMEWORK_BYTES,
   MAX_HOMEWORK_LINK,
   MAX_HOMEWORK_NOTE,
@@ -27,8 +28,11 @@ import {
   type HomeworkView,
 } from "@/lib/platform/homework-types";
 import { LESSON_STEP_HOMEWORK } from "@/lib/platform/lesson-types";
+import { attachmentIds } from "./attachment-rules";
+import { loadAttachments, validateAttachments } from "./attachments";
 import { cleanFileName, extOfPath, headMatchesExt, homeworkExt, homeworkMime } from "./files";
 import { gradeSubmission, STALE_GRADING_SEC, type HomeworkRow } from "./grade";
+import { progressOf } from "./passes";
 
 /*
   Сдача домашки (docs/platform/spec.md «Домашки»). Поток как у монтажа:
@@ -91,9 +95,16 @@ function aiNote(row: HomeworkRow): string | null {
   return null;
 }
 
-export async function toHomeworkView(row: HomeworkRow): Promise<HomeworkView> {
+/**
+ * Сдача для браузера. Права на строку проверяет вызывающий код. revealHidden — ведущему видны
+ * и результаты из галереи, которые он скрыл.
+ */
+export async function toHomeworkView(row: HomeworkRow, options: { revealHidden?: boolean } = {}): Promise<HomeworkView> {
   const path = row.status !== "uploading" ? row.storage_path : null;
-  const signed = path ? await signMediaPaths([path]) : null;
+  const [signed, attachments] = await Promise.all([
+    path ? signMediaPaths([path]) : null,
+    loadAttachments(row.user_id, row.attachments, { revealHidden: options.revealHidden ?? false }),
+  ]);
   const feedback = row.status === "graded" && row.ai_score !== null ? feedbackOf(row.ai_feedback) : null;
   return {
     id: row.id,
@@ -113,6 +124,8 @@ export async function toHomeworkView(row: HomeworkRow): Promise<HomeworkView> {
       row.teacher_score !== null
         ? { score: row.teacher_score, comment: row.teacher_comment, gradedAt: row.teacher_graded_at ?? row.updated_at }
         : null,
+    attachments,
+    progress: row.status === "grading" ? progressOf(row.grading_progress) : null,
     createdAt: row.created_at,
   };
 }
@@ -166,7 +179,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * grading и её доведёт следующий опрос.
  */
 async function gradeWithinBudget(id: string): Promise<void> {
-  const run = gradeSubmission(id).catch((error: unknown) => {
+  const run = gradeSubmission(id, { startedAt: Date.now() }).catch((error: unknown) => {
     console.error("homework.grade: failed", { message: error instanceof Error ? error.message : String(error) });
   });
   after(() => run);
@@ -205,6 +218,8 @@ export const createSubmissionSchema = z.object({
   text: trimmed(MAX_HOMEWORK_TEXT).optional(),
   linkUrl: trimmed(MAX_HOMEWORK_LINK).optional(),
   note: trimmed(MAX_HOMEWORK_NOTE).optional(),
+  /** id своих готовых результатов из галереи (jobs) */
+  attachments: z.array(z.string().max(64)).max(MAX_HOMEWORK_ATTACHMENTS).optional(),
 });
 
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
@@ -264,11 +279,12 @@ export async function createSubmission(user: SessionUser, input: CreateSubmissio
     link = httpsLink(input.linkUrl);
     if (!link) return { status: 400, body: { ok: false, error: "bad_link" } };
   } else {
+    // «Текст» без текста — можно, если прикреплены результаты из галереи (урок 2: клипы + пара слов)
     text = input.text || null;
-    if (!text) return { status: 400, body: { ok: false, error: "empty_text" } };
+    if (!text && !input.attachments?.length) return { status: 400, body: { ok: false, error: "empty_text" } };
   }
 
-  const moderation = moderateFields({ text, note, fileName }, { maxLength: MAX_HOMEWORK_TEXT });
+  const moderation = moderateFields({ text, note, fileName }, { maxLength: Math.max(MAX_HOMEWORK_TEXT, MAX_HOMEWORK_NOTE) });
   if (!moderation.ok) {
     await audit({
       actorId: user.id,
@@ -280,6 +296,8 @@ export async function createSubmission(user: SessionUser, input: CreateSubmissio
     return { status: 400, body: { ok: false, error: moderation.reason, field: moderation.field } };
   }
   if ((await submissionsToday(user.id)) >= DAILY_SUBMISSIONS) return { status: 429, body: { ok: false, error: "rate_limited" } };
+  const attached = await validateAttachments(user.id, input.attachments ?? []);
+  if (!attached.ok) return { status: 400, body: { ok: false, error: attached.error, field: "attachments" } };
 
   await supersedeActive(user.id, input.lessonId);
   const admin = createAdminClient();
@@ -299,6 +317,7 @@ export async function createSubmission(user: SessionUser, input: CreateSubmissio
       file_name: fileName,
       mime,
       size_bytes: input.sizeBytes ?? null,
+      attachments: attached.ids.length ? attached.ids : null,
       status: input.kind === "file" ? "uploading" : "submitted",
     })
     .select("*")
@@ -409,6 +428,8 @@ export type HomeworkCell = {
   aiScore: number | null;
   aiSkipped: boolean;
   teacherScore: number | null;
+  /** сколько результатов из галереи прикреплено */
+  attachmentCount: number;
   createdAt: string;
 };
 
@@ -418,7 +439,7 @@ export async function listGroupHomework(user: SessionUser, groupId: string): Pro
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("homework_submissions")
-    .select("id, user_id, lesson_id, kind, status, ai_score, ai_error, teacher_score, created_at")
+    .select("id, user_id, lesson_id, kind, status, ai_score, ai_error, teacher_score, attachments, created_at")
     .eq("group_id", groupId)
     .is("superseded_at", null)
     .neq("status", "uploading")
@@ -434,6 +455,7 @@ export async function listGroupHomework(user: SessionUser, groupId: string): Pro
     aiScore: row.ai_score,
     aiSkipped: row.status === "submitted" && row.ai_error !== null,
     teacherScore: row.teacher_score,
+    attachmentCount: attachmentIds(row.attachments).length,
     createdAt: row.created_at,
   }));
 }
@@ -453,7 +475,7 @@ export async function getHomeworkForTeacher(user: SessionUser, id: string): Prom
   const { data: profile, error } = await createAdminClient().from("profiles").select("id, nickname, login").eq("id", row.user_id).maybeSingle();
   if (error) throw new Error(`homework.getHomeworkForTeacher profile failed (${error.code})`);
   return {
-    homework: await toHomeworkView(row),
+    homework: await toHomeworkView(row, { revealHidden: true }),
     student: { id: row.user_id, nickname: profile?.nickname ?? "—", login: profile?.login ?? null },
     groupId: row.group_id,
     superseded: row.superseded_at !== null,
