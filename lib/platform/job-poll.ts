@@ -82,6 +82,16 @@ export function isGatewayCheckDue(lastPolledAt: string | null, intervalSec: numb
 export const CLIENT_MAX_POLLS = 90;
 /** Подряд столько ответов 401/403/404 — опрос останавливается (сессия, права, задачи нет). */
 export const CLIENT_STOP_AFTER_REJECTS = 2;
+/**
+ * Вкладка в фоне опрашивает редко, но не молчит: иначе готовый результат ждёт, пока ученик
+ * вернётся на вкладку (задачу двигает только опрос), и «видео крутится 20 минут».
+ */
+export const CLIENT_HIDDEN_MIN_MS = 45 * SECOND;
+
+/** Пауза с учётом видимости вкладки: в фоне — не чаще CLIENT_HIDDEN_MIN_MS. */
+export function withVisibility(delayMs: number, visible: boolean): number {
+  return visible ? delayMs : Math.max(delayMs, CLIENT_HIDDEN_MIN_MS);
+}
 /** queued дольше этого — шлюз не подтвердил задачу (ответ неизвестен), ждём возврата. */
 export const UNCERTAIN_AFTER_MS = 20 * SECOND;
 
