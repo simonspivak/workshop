@@ -11,7 +11,9 @@ import type { JobAction, JobStatus } from "@/lib/server/supabase/types";
 const MINUTE = 60_000;
 
 export const GATEWAY_POLL_INTERVAL_SEC = 5;
-export const QUEUED_WITHOUT_TASK_LIMIT_MS = 3 * MINUTE;
+// Больше maxDuration /api/generate (60 с) с запасом: после конца запроса taskId уже никто не запишет
+// (mark_job_submitted — только из того же запроса), ждать дольше незачем (аудит № 20).
+export const QUEUED_WITHOUT_TASK_LIMIT_MS = 90_000;
 export const STORING_RECLAIM_AFTER_MS = 3 * MINUTE; // как в SQL begin_job_storing
 export const SUBMITTED_HARD_LIMIT_MS = 60 * MINUTE;
 export const MAX_RESULT_FILES = 5;
@@ -53,7 +55,16 @@ export function isStoringStale(job: JobTiming, now: number): boolean {
 // ---------- ошибки задачи ----------
 // В jobs.error пишем «код: подробности». Наружу уходит только код.
 
-export const JOB_ERROR_CODES = ["generation_failed", "timeout", "gateway_lost", "gateway_error", "result_unavailable"] as const;
+export const JOB_ERROR_CODES = [
+  "generation_failed",
+  "timeout",
+  "gateway_lost",
+  "gateway_error",
+  // постоянный отказ kie (4xx кроме 429): весь аккаунт (нет кредитов, ключ) или этот запрос
+  "gateway_unavailable",
+  "gateway_rejected",
+  "result_unavailable",
+] as const;
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
 export function refundReason(code: JobErrorCode, detail?: string | null): string {
