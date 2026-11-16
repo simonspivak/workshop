@@ -5,6 +5,7 @@ import { grantStudentStars, resetStudentPassword, updateStudentAge, type GrantRe
 import { FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
 import { Badge, Notice, Stars, hintClass, inputClass, labelClass } from "@/components/platform/ui";
+import { UnlockLoginButton } from "./UnlockLoginButton";
 import { ageBandLabels, type ActionResult, type AgeBand } from "@/lib/platform/messages";
 
 export type StudentItem = {
@@ -53,7 +54,10 @@ function StudentRow({ student }: { student: StudentItem }) {
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <GrantForm studentId={student.id} />
           <AgeForm student={student} />
-          <ResetForm studentId={student.id} />
+          <div className="space-y-4">
+            <ResetForm studentId={student.id} />
+            {student.login && <UnlockLoginButton studentId={student.id} />}
+          </div>
         </div>
       </details>
     </li>

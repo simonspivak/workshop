@@ -75,8 +75,11 @@ export async function fetchJob(id: string): Promise<FetchJobResult> {
   }
 }
 
-/** Почему карточка перестала опрашивать сервер: потолок запросов, сессия закончилась, задачи нет. */
-export type LivePollStop = "ceiling" | "session" | "gone";
+/**
+ * Почему карточка перестала опрашивать сервер: потолок запросов, вход закончился (401 — например,
+ * ведущий сменил пароль, и сессии ученика закрылись), нет прав (403), задачи нет (404).
+ */
+export type LivePollStop = "ceiling" | "signed_out" | "session" | "gone";
 export type LiveJob = { job: JobView; stopped: LivePollStop | null; refresh: () => void };
 
 // Незавершённые карточки на странице: чем их больше, тем реже опрашивает каждая (crowdFactor)
@@ -129,7 +132,7 @@ export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void)
       const result = await fetchJob(jobRef.current.id);
       if (cancelled) return;
       if (result.kind === "rejected") {
-        if (++rejects >= CLIENT_STOP_AFTER_REJECTS) return stop(result.status === 404 ? "gone" : "session");
+        if (++rejects >= CLIENT_STOP_AFTER_REJECTS) return stop(result.status === 404 ? "gone" : result.status === 401 ? "signed_out" : "session");
       } else if (result.kind === "error") {
         errors++;
       } else {
@@ -166,6 +169,10 @@ export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void)
   }, [polling, run]);
 
   const refresh = () => {
+    if (stopped === "signed_out") {
+      window.location.assign(loginAgainHref(window.location.pathname));
+      return;
+    }
     if (stopped === "session" || stopped === "gone") {
       window.location.reload(); // сессию и права восстановит только перезагрузка (вход заново)
       return;
@@ -175,6 +182,11 @@ export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void)
   };
 
   return { job, stopped, refresh };
+}
+
+/** Вход заново с возвратом на эту страницу (вход принимает ?next= только для /app и /teach). */
+export function loginAgainHref(pathname: string): string {
+  return `/login?next=${encodeURIComponent(pathname)}`;
 }
 
 // ---------- корзина референсов ----------

@@ -363,6 +363,10 @@ export type Database = {
       };
       rate_limit_hit: { Args: { p_key: string; p_limit: number; p_window_seconds: number }; Returns: boolean };
       rate_limit_reset: { Args: { p_key: string }; Returns: undefined };
+      // 20261116150000_login_limits: занять попытку (id или null — лимит) и вернуть именно её
+      rate_limit_take: { Args: { p_key: string; p_limit: number; p_window_seconds: number }; Returns: number | null };
+      rate_limit_refund: { Args: { p_key: string; p_hit_id: number }; Returns: boolean };
+      staff_id_by_email: { Args: { p_email: string }; Returns: string | null };
       record_quiz_attempt: {
         Args: {
           p_user: string;
