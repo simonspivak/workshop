@@ -2,9 +2,11 @@
 
 import { RichText } from "@/components/platform/RichText";
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Copy, EyeOff, LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Check, Copy, EyeOff, LoaderCircle, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
 import { DeleteJobButton, canDeleteJob } from "@/components/platform/DeleteJobButton";
-import { useLiveJob, type LiveJob, type LivePollStop } from "@/components/platform/GenerateClient";
+import { loginAgainHref, useLiveJob, type LiveJob, type LivePollStop } from "@/components/platform/GenerateClient";
 import { Badge, Stars, buttonClass } from "@/components/platform/ui";
 import { UNCERTAIN_AFTER_MS } from "@/lib/platform/job-poll";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
@@ -89,6 +91,7 @@ function TextResult({ text }: { text: string }) {
 /** live — состояние опроса из useLiveJob: если опрос остановился, вместо спиннера кнопка «Обновить». */
 export function JobStatusLine({ job, live }: { job: JobView; live?: Pick<LiveJob, "stopped" | "refresh"> }) {
   const uncertain = useAgeOver(job.status === "queued" ? job.createdAt : null, UNCERTAIN_AFTER_MS);
+  if (isActiveJobStatus(job.status) && live?.stopped === "signed_out") return <SignedOutLine />;
   if (isActiveJobStatus(job.status) && live?.stopped) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-sm text-ink-soft" role="status">
@@ -121,7 +124,21 @@ export function JobStatusLine({ job, live }: { job: JobView; live?: Pick<LiveJob
 // queued без ответа шлюза: задача, возможно, не создана; правило «queued без задачи дольше 90 с» вернёт звёзды
 const UNCERTAIN_TEXT = "Сервис генерации пока не подтвердил задачу. Ждём до полутора минут; если ответа не будет, звёзды вернутся сами.";
 
+/** Опрос получил 401: сессия закрыта (смена пароля ведущим, выход). Опрос стоит, задача на сервере идёт дальше. */
+function SignedOutLine() {
+  const pathname = usePathname();
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-ink-soft" role="status">
+      <span>{stoppedText.signed_out}</span>
+      <Link href={loginAgainHref(pathname)} className={buttonClass("secondary", "sm")}>
+        <LogIn aria-hidden="true" className="size-4" /> Войти заново
+      </Link>
+    </div>
+  );
+}
+
 const stoppedText: Record<LivePollStop, string> = {
+  signed_out: "Пароль изменён или сессия закончилась. Войдите заново — задача не пропадёт.",
   ceiling: "Генерация идёт дольше обычного. Нажмите «Обновить», чтобы проверить ещё раз.",
   session: "Сессия закончилась. Обновите страницу, чтобы узнать, готово ли.",
   gone: "Задача не найдена. Обновите страницу.",

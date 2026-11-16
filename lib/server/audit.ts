@@ -35,7 +35,11 @@ export type AuditAction =
   | "homework.teacher_grade"
   // пульт админа: «Стоп генераций» и потолки ведущих
   | "settings.generation"
-  | "settings.staff_limits";
+  | "settings.staff_limits"
+  // вход: только аккаунты ведущих и админа (login/actions.ts); снятие блокировки входа ученика
+  | "login.success"
+  | "login.failed"
+  | "student.login_unlock";
 
 export async function audit(entry: {
   actorId: string | null;
