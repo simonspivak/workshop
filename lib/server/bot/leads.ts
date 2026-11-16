@@ -1,5 +1,6 @@
 import "server-only";
 import { normalizeKey, type LeadForm } from "@/lib/server/bot/tools";
+import { moderateText } from "@/lib/server/moderation";
 
 /*
   Служебные строки в ответе модели (docs/platform/spec.md §5):
@@ -103,9 +104,36 @@ export type LeadData = Record<string, string | number>;
 
 export type LeadValidation =
   | { ok: true; data: LeadData }
-  | { ok: false; reason: "not_object" | "missing_field" | "bad_value" | "personal_data" | "empty" };
+  | { ok: false; reason: "not_object" | "missing_field" | "bad_value" | "link" | "personal_data" | "empty" };
 
 const TEXT_MAX = { name: 60, text: 200, contact: 100, choice: 40 } as const;
+
+// Невидимые символы (нулевой ширины, направление текста, BOM): прячут ссылку или переворачивают строку
+const INVISIBLE_RE = /[­​-‏‪-‮⁠-⁤⁦-⁩﻿]/g;
+// Управляющие символы (C0, DEL, C1): в одну строку
+const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]+/g;
+
+/** Значение поля из ответа модели: без управляющих и невидимых символов, пробелы схлопнуты. */
+export function cleanLeadText(value: string): string {
+  return value.replace(INVISIBLE_RE, "").replace(CONTROL_RE, " ").replace(/\s+/g, " ").trim();
+}
+
+// Ник в Telegram — можно: t.me/ivan_petrov, https://t.me/ivan_petrov (и @ivan_petrov — это не ссылка)
+const TELEGRAM_LINK_RE = /^(?:https?:\/\/)?(?:t|telegram)\.me\/@?[a-z0-9_]{4,32}\/?$/i;
+const SCHEME_RE = /\b[a-z][a-z0-9+.-]{1,15}:\/\/\S*/gi;
+// Домен с путём: example.com/x, сайт.рф/x. Зона — латиница или «рф», поэтому «г.Кишинёв/центр» — не ссылка
+const DOMAIN_PATH_RE = /(?<![\p{L}\p{N}@._-])(?:[\p{L}\p{N}-]+\.)+(?:[a-z]{2,24}|рф)\/\S*/giu;
+
+/**
+ * Ссылка в поле заявки (аудит № 48): адрес со схемой (https://…), www.… или домен с путём.
+ * Ник в Telegram (t.me/ник, @ник), e-mail и телефон ссылкой не считаются: строгий формат
+ * контакта не вводим, чтобы не терять настоящие заявки («тг: ivan», «вайбер 069…»).
+ */
+export function hasLink(text: string): boolean {
+  if (/\bwww\./i.test(text)) return true;
+  const candidates = [...(text.match(SCHEME_RE) ?? []), ...(text.match(DOMAIN_PATH_RE) ?? [])];
+  return candidates.some((link) => !TELEGRAM_LINK_RE.test(link.replace(/[.,;:!?)»"']+$/, "")));
+}
 
 /**
  * Проверить заявку от модели по полям формы владельца.
@@ -142,7 +170,7 @@ export function validateLead(
     }
 
     if (typeof value !== "string" && typeof value !== "number") return { ok: false, reason: "bad_value" };
-    const text = String(value).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+    const text = cleanLeadText(String(value));
     if (!text) {
       if (field.required) return { ok: false, reason: "missing_field" };
       continue;
@@ -157,6 +185,11 @@ export function validateLead(
 
     const max = TEXT_MAX[field.type];
     if (text.length > max) return { ok: false, reason: "bad_value" };
+    // Ссылки и стоп-слова — ни в одном поле (имя, текст, контакт): заявка уходит владельцу в Telegram.
+    // Телефон и e-mail здесь не отказ: у взрослых это и есть контакт (у младших — hasPersonalData ниже).
+    if (hasLink(text)) return { ok: false, reason: "link" };
+    const moderation = moderateText(text, { maxLength: 1000 });
+    if (!moderation.ok && moderation.reason === "stop_word") return { ok: false, reason: "bad_value" };
     if (field.type !== "contact" && options.hasPersonalData?.(text)) return { ok: false, reason: "personal_data" };
     data[field.label] = text;
   }
@@ -170,6 +203,6 @@ export function readCardScene(raw: unknown): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const scene = (raw as Record<string, unknown>).scene;
   if (typeof scene !== "string") return null;
-  const text = scene.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  const text = cleanLeadText(scene);
   return text.length >= 3 && text.length <= 200 ? text : null;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { isActiveJobStatus, type JobAction, type JobView, type MediaKind } from "@/lib/platform/generation-types";
-import { CLIENT_MAX_POLLS, CLIENT_STOP_AFTER_REJECTS, clientFirstDelayMs, clientPollDelayMs } from "@/lib/platform/job-poll";
+import { CLIENT_MAX_POLLS, CLIENT_STOP_AFTER_REJECTS, clientFirstDelayMs, clientPollDelayMs, withVisibility } from "@/lib/platform/job-poll";
 
 /*
   Браузерная часть генераций: запрос в /api/generate, опрос /api/jobs/[id] по расписанию
@@ -90,7 +90,7 @@ const ageOf = (job: JobView) => Math.max(0, Date.now() - Date.parse(job.createdA
 /**
  * Живое состояние задачи. Пока она не готова, спрашиваем сервер по расписанию
  * lib/platform/job-poll.ts: пауза растёт с возрастом задачи, у видео и музыки она длиннее,
- * со случайным разбросом. Во вкладке в фоне опрос стоит, при возвращении — сразу проверка.
+ * со случайным разбросом. Во вкладке в фоне опрос редкий (раз в 45 с и реже), при возвращении — сразу проверка.
  * После CLIENT_MAX_POLLS запросов или отказа сервера опрос останавливается (stopped),
  * refresh() запускает его заново. onSettled — когда задача стала done или failed.
  */
@@ -126,7 +126,6 @@ export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void)
     async function tick() {
       timer = undefined;
       if (cancelled) return;
-      if (document.visibilityState !== "visible") return; // продолжит onVisible
       if (polls >= CLIENT_MAX_POLLS) return stop("ceiling");
       polls++;
       const result = await fetchJob(jobRef.current.id);
@@ -146,13 +145,17 @@ export function useLiveJob(initial: JobView, onSettled?: (job: JobView) => void)
         }
       }
       const current = jobRef.current;
+      // в фоне — редко (CLIENT_HIDDEN_MIN_MS): результат сохранится и без возврата на вкладку
       schedule(
-        clientPollDelayMs({ action: current.action, status: current.status, ageMs: ageOf(current), errors, crowd: livePollers }),
+        withVisibility(
+          clientPollDelayMs({ action: current.action, status: current.status, ageMs: ageOf(current), errors, crowd: livePollers }),
+          document.visibilityState === "visible",
+        ),
       );
     }
     const onVisible = () => {
       // вернулись на вкладку: проверить почти сразу, но вразнобой с соседними карточками
-      if (document.visibilityState === "visible" && timer === undefined && !cancelled) {
+      if (document.visibilityState === "visible" && !cancelled) {
         schedule(300 + Math.random() * Math.min(livePollers, 24) * 250);
       }
     };

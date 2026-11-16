@@ -97,6 +97,44 @@ export async function createJobWithDebit(input: {
 }
 
 /**
+ * Открытка гостю бота (create_bot_card_job): суточный лимит открыток гостям и число открыток
+ * в работе проверяются в одной транзакции с create_job, под блокировкой открыток этого бота —
+ * параллельные подтверждения не проходят лимит все сразу (аудит № 45).
+ * card_limit — открыток гостям за сутки уже dailyLimit; too_many_jobs — в работе уже activeLimit.
+ */
+export async function createCardJobWithDebit(input: {
+  userId: string;
+  action: JobAction;
+  model: string;
+  stars: number;
+  idempotencyKey: string;
+  params: Record<string, Json | undefined>;
+  prompt: string;
+  taskRef: string;
+  dailyLimit: number;
+  activeLimit: number;
+}): Promise<
+  { ok: true; jobId: string; balance: number; reused: boolean } | { ok: false; error: WalletError | "card_limit" }
+> {
+  const { data, error } = await createAdminClient().rpc("create_bot_card_job", {
+    p_user: input.userId,
+    p_action: input.action,
+    p_model: input.model,
+    p_stars: input.stars,
+    p_idempotency_key: input.idempotencyKey,
+    p_params: input.params as Json,
+    p_prompt: input.prompt,
+    p_task_ref: input.taskRef,
+    p_daily_limit: input.dailyLimit,
+    p_active_limit: input.activeLimit,
+  });
+  const row = data?.[0];
+  if (error?.message === "card_limit") return { ok: false, error: "card_limit" };
+  if (error || !row) return { ok: false, error: toWalletError(error, "createCardJobWithDebit") };
+  return { ok: true, jobId: row.job_id, balance: row.balance, reused: row.reused };
+}
+
+/**
  * Закрыть задачу как неудачную и вернуть списанное. Повторный вызов ничего не делает,
  * готовую (done) задачу вернуть нельзя. refunded — сколько звёзд вернулось (0, если нечего).
  */

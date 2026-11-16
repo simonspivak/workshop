@@ -5,12 +5,13 @@ import { BOT_LIMITS } from "@/lib/server/bot/limits";
 import { verifyCardTicket } from "@/lib/server/bot/secrets";
 import { lifetimeOf, priceSubject, type BotRecord } from "@/lib/server/bot/store";
 import { createTask, downloadResult, getTaskStatus, isGatewayModel, type ModelFor } from "@/lib/server/gateway";
-import { beginJobStoring, claimJobPoll, completeJob, markJobSubmitted, MEDIA_BUCKET, mediaPath } from "@/lib/server/jobs";
+import { beginJobStoring, claimJobPoll, completeJob, markJobSubmitted, mediaPath } from "@/lib/server/jobs";
 import { moderateText } from "@/lib/server/moderation";
 import { canUse } from "@/lib/server/prices";
+import { signMediaPaths, SIGNED_URL_TTL_SEC, uploadMedia, type SignOptions } from "@/lib/server/storage";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import type { Json } from "@/lib/server/supabase/types";
-import { createJobWithDebit, refundJob, type WalletError } from "@/lib/server/wallet";
+import { createCardJobWithDebit, createJobWithDebit, refundJob, type WalletError } from "@/lib/server/wallet";
 
 /*
   Инструмент «Открытка» (docs/course/lesson-3.md §7.2, §8.3, §14.4):
@@ -18,9 +19,11 @@ import { createJobWithDebit, refundJob, type WalletError } from "@/lib/server/wa
     • гость подтверждает кнопкой с ценой — только тогда списываются звёзды владельца;
     • задача — обычная задача генерации владельца (jobs, его галерея), action image_edit с аватаром
       бота в image_input или image без аватара; модель — первая доступная владельцу по прайсу;
-    • гостям — только у ботов 18+ и не больше 3 в сутки; в проверке владельцем — без лимита.
+    • гостям — только у ботов 18+, не больше 3 в сутки и 2 в работе одновременно (проверяет SQL
+      create_bot_card_job вместе со списанием); в проверке владельцем — без лимита.
   Статус спрашивается лениво (как /api/jobs/[id]): опрос шлюза не чаще раза в 4 секунды,
-  результат копируется в приватный бакет media, ссылка — подписанная на час.
+  результат копируется в приватный бакет media, ссылка — подписанная на час (общий кеш подписей,
+  как в галерее: права проверяются до подписи).
 */
 
 const STYLE =
@@ -35,10 +38,9 @@ export function cardPrompt(input: { name: string; scene: string; withReference: 
     : `Character: ${input.name}, a food character from the comedy series «На масле». ${scene} ${STYLE}`;
 }
 
-export type CardError = "card_unavailable" | "card_ticket" | "card_limit" | WalletError;
+export type CardError = "card_unavailable" | "card_ticket" | "card_limit" | "card_busy" | WalletError;
 
 const taskRef = (botId: string) => `bot-card:${botId}`;
-const SIGNED_URL_SECONDS = 3600;
 
 /** Путь картинки-аватара в Storage, если это готовая картинка владельца. */
 export async function avatarPath(bot: Pick<BotRecord, "avatarJobId" | "ownerId">): Promise<string | null> {
@@ -53,9 +55,12 @@ export async function avatarPath(bot: Pick<BotRecord, "avatarJobId" | "ownerId">
   return data.storage_path;
 }
 
-export async function signedMediaUrl(path: string, seconds = SIGNED_URL_SECONDS): Promise<string | null> {
-  const { data, error } = await createAdminClient().storage.from(MEDIA_BUCKET).createSignedUrl(path, seconds);
-  return error || !data ? null : data.signedUrl;
+/**
+ * Подписанная ссылка на час — через общий кеш инстанса (lib/server/storage.ts), как в галерее.
+ * Права проверяет вызывающий код ДО этого вызова (avatarPath, pollCard). fresh — мимо кеша (для шлюза).
+ */
+export async function signedMediaUrl(path: string, options: SignOptions = {}): Promise<string | null> {
+  return (await signMediaPaths([path], SIGNED_URL_TTL_SEC, options)).get(path) ?? null;
 }
 
 export async function startCard(input: {
@@ -72,22 +77,10 @@ export async function startCard(input: {
   if (!scene) return { ok: false, error: "card_ticket" };
   if (!moderateText(scene, { maxLength: 200 }).ok) return { ok: false, error: "card_unavailable" };
 
-  const db = createAdminClient();
-  if (!input.preview) {
-    const { count, error } = await db
-      .from("jobs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", bot.ownerId)
-      .eq("task_ref", taskRef(bot.id))
-      .filter("params->>preview", "eq", "false")
-      .gte("created_at", new Date(Date.now() - 86_400_000).toISOString());
-    if (error) throw new Error(`bot.card.count failed (${error.code})`);
-    if ((count ?? 0) >= BOT_LIMITS.cardsPerBotPerDay) return { ok: false, error: "card_limit" };
-  }
-
   const reference = await avatarPath(bot);
-  const referenceUrl = reference ? await signedMediaUrl(reference) : null;
-  const action = referenceUrl ? "image_edit" : "image";
+  // шлюзу — свежая ссылка на полный час: kie может забрать референс не сразу
+  const referenceUrl = reference ? await signedMediaUrl(reference, { fresh: true }) : null;
+  const action: "image" | "image_edit" = referenceUrl ? "image_edit" : "image";
   const decision = await canUse(priceSubject(bot.owner), action);
   if (!decision.ok || !isGatewayModel(action, decision.model)) return { ok: false, error: "card_unavailable" };
 
@@ -101,17 +94,19 @@ export async function startCard(input: {
     aspectRatio: "9:16",
     scene,
   };
-  const job = await createJobWithDebit({
-    userId: bot.ownerId,
-    action,
-    model: decision.model,
-    stars: decision.stars,
-    idempotencyKey,
-    params,
-    prompt,
-    taskRef: taskRef(bot.id),
-  });
-  if (!job.ok) return { ok: false, error: job.error };
+  const debit = { userId: bot.ownerId, action, model: decision.model, stars: decision.stars, idempotencyKey, params, prompt };
+  // Гостям: лимит в сутки и число открыток в работе проверяет SQL в одной транзакции со списанием
+  // (аудит № 45). Проверка владельцем — без лимита.
+  const job = input.preview
+    ? await createJobWithDebit({ ...debit, taskRef: taskRef(bot.id) })
+    : await createCardJobWithDebit({
+        ...debit,
+        taskRef: taskRef(bot.id),
+        dailyLimit: BOT_LIMITS.cardsPerBotPerDay,
+        activeLimit: BOT_LIMITS.cardsActivePerBot,
+      });
+  // гостю — понятнее, чем «у вас много генераций»: места заняты открытками или генерациями владельца
+  if (!job.ok) return { ok: false, error: !input.preview && job.error === "too_many_jobs" ? "card_busy" : job.error };
   if (job.reused) return { ok: true, jobId: job.jobId, stars: decision.stars };
 
   const task =
@@ -194,10 +189,9 @@ async function storeCard(ownerId: string, jobId: string, resultUrl: string, cred
     return { status: "failed" };
   }
   const path = mediaPath(ownerId, jobId, file.ext);
-  const upload = await createAdminClient()
-    .storage.from(MEDIA_BUCKET)
-    .upload(path, file.bytes, { contentType: file.contentType, upsert: true });
-  if (upload.error) {
+  // uploadMedia забывает старую ссылку этого пути в кеше подписей
+  const upload = await uploadMedia(path, file.bytes, file.contentType);
+  if (!upload.ok) {
     console.error("bot.card: storage upload failed", { job: jobId });
     return { status: "pending" };
   }

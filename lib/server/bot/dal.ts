@@ -17,8 +17,9 @@ import {
 import type { BotTools, LeadForm } from "@/lib/server/bot/tools";
 import { AuthError, isStaff, type SessionUser } from "@/lib/server/dal/auth";
 import { getGroup } from "@/lib/server/dal/teacher";
-import { MEDIA_BUCKET } from "@/lib/server/jobs";
 import { canUse } from "@/lib/server/prices";
+import { signMediaPaths } from "@/lib/server/storage";
+import { fetchAll } from "@/lib/server/supabase/paging";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import type { AgeBand } from "@/lib/server/supabase/types";
 
@@ -143,11 +144,8 @@ export async function listMyImages(user: SessionUser): Promise<GalleryImage[]> {
   if (error) throw new Error(`bot.dal.listMyImages failed (${error.code})`);
   const rows = (data ?? []).filter((row) => row.storage_path);
   if (!rows.length) return [];
-  const { data: signed } = await db.storage.from(MEDIA_BUCKET).createSignedUrls(
-    rows.map((row) => row.storage_path!),
-    3600,
-  );
-  const urls = new Map((signed ?? []).filter((s) => s.signedUrl).map((s) => [s.path, s.signedUrl]));
+  // свои готовые картинки (проверено запросом выше) — подпись через общий кеш, как в галерее
+  const urls = await signMediaPaths(rows.map((row) => row.storage_path!));
   return rows
     .map((row) => ({ jobId: row.id, url: urls.get(row.storage_path!) ?? "", label: (row.prompt ?? "").slice(0, 80) }))
     .filter((image) => image.url);
@@ -166,28 +164,65 @@ export async function getPreviewHistory(user: SessionUser, botId: string): Promi
 
 export type LeadView = { id: string; channel: "web" | "telegram"; createdAt: string; data: Record<string, string> };
 
-/** Заявки бота владельца, новые сверху. */
-export async function listMyLeads(user: SessionUser): Promise<{ form: LeadForm | null; leads: LeadView[] } | null> {
+/**
+ * Сколько заявок показывает страница «Заявки» (новые сверху). Меньше Max Rows PostgREST (1000):
+ * иначе сервер молча обрезал бы список. Все заявки — в CSV (аудит № 40).
+ */
+export const LEADS_PAGE = 500;
+
+type LeadRow = { id: string; channel: "web" | "telegram"; created_at: string; data: unknown };
+
+function toLeadView(row: LeadRow): LeadView {
+  return {
+    id: row.id,
+    channel: row.channel,
+    createdAt: row.created_at,
+    data: Object.fromEntries(
+      Object.entries((row.data ?? {}) as Record<string, unknown>).map(([k, v]) => [k, v == null ? "" : String(v)]),
+    ),
+  };
+}
+
+/**
+ * Заявки бота владельца, новые сверху. По умолчанию — последние LEADS_PAGE и общее число (total);
+ * all — все заявки страницами (для CSV).
+ */
+export async function listMyLeads(
+  user: SessionUser,
+  options: { all?: boolean } = {},
+): Promise<{ form: LeadForm | null; leads: LeadView[]; total: number } | null> {
   const bot = await loadBotByOwner(user.id);
   if (!bot) return null;
-  const { data, error } = await createAdminClient()
+  const db = createAdminClient();
+  const columns = "id, channel, created_at, data";
+
+  if (options.all) {
+    // Старые сверху: новая заявка во время выгрузки встаёт в конец и не сдвигает страницы
+    const rows = await fetchAll<LeadRow>(
+      (from, to) =>
+        db
+          .from("bot_leads")
+          .select(columns)
+          .eq("bot_id", bot.id)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      "bot.dal.listMyLeads",
+    );
+    const leads = rows.reverse().map(toLeadView);
+    return { form: bot.tools.leadForm, leads, total: leads.length };
+  }
+
+  const { data, error, count } = await db
     .from("bot_leads")
-    .select("id, channel, created_at, data")
+    .select(columns, { count: "exact" })
     .eq("bot_id", bot.id)
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .order("id", { ascending: false })
+    .range(0, LEADS_PAGE - 1);
   if (error) throw new Error(`bot.dal.listMyLeads failed (${error.code})`);
-  return {
-    form: bot.tools.leadForm,
-    leads: (data ?? []).map((row) => ({
-      id: row.id,
-      channel: row.channel,
-      createdAt: row.created_at,
-      data: Object.fromEntries(
-        Object.entries((row.data ?? {}) as Record<string, unknown>).map(([k, v]) => [k, v == null ? "" : String(v)]),
-      ),
-    })),
-  };
+  const leads = (data ?? []).map(toLeadView);
+  return { form: bot.tools.leadForm, leads, total: Math.max(count ?? 0, leads.length) };
 }
 
 // ---------- публичная страница /b/[slug] ----------
@@ -277,35 +312,34 @@ export async function listGroupBots(
     .order("name", { ascending: true });
   if (botsError) throw new Error(`bot.dal.listGroupBots bots failed (${botsError.code})`);
 
+  // Счётчики всех ботов — одним запросом (аудит № 39: было 2 запроса на каждого бота)
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const rows = await Promise.all(
-    (bots ?? []).map(async (bot): Promise<GroupBotRow> => {
-      const [leads, messages] = await Promise.all([
-        db.from("bot_leads").select("id", { count: "exact", head: true }).eq("bot_id", bot.id),
-        db
-          .from("bot_messages")
-          .select("id", { count: "exact", head: true })
-          .eq("bot_id", bot.id)
-          .eq("role", "user")
-          .not("conversation_id", "like", "owner:%")
-          .gte("created_at", weekAgo),
-      ]);
-      const owner = owners.get(bot.owner_id)!;
-      const tools = (bot.tools ?? {}) as Record<string, unknown>;
-      return {
-        botId: bot.id,
-        slug: bot.slug,
-        name: bot.name,
-        ownerNickname: owner.nickname,
-        ownerLogin: owner.login,
-        ownerAgeBand: owner.age_band,
-        tools: { leads: tools.leads === true, image: tools.image === true, knowledge: tools.knowledge === true },
-        telegramUsername: bot.telegram_token_ciphertext ? bot.telegram_bot_username : null,
-        leadsCount: leads.count ?? 0,
-        guestMessagesWeek: messages.count ?? 0,
-        updatedAt: bot.updated_at,
-      };
-    }),
-  );
+  const botIds = (bots ?? []).map((bot) => bot.id);
+  const counters = new Map<string, { leads: number; messages: number }>();
+  if (botIds.length) {
+    const { data, error: countersError } = await db.rpc("group_bot_counters", { p_bot_ids: botIds, p_since: weekAgo });
+    if (countersError) throw new Error(`bot.dal.listGroupBots counters failed (${countersError.code})`);
+    for (const row of data ?? []) {
+      counters.set(row.bot_id, { leads: Number(row.leads_count), messages: Number(row.guest_messages) });
+    }
+  }
+
+  const rows = (bots ?? []).map((bot): GroupBotRow => {
+    const owner = owners.get(bot.owner_id)!;
+    const tools = (bot.tools ?? {}) as Record<string, unknown>;
+    return {
+      botId: bot.id,
+      slug: bot.slug,
+      name: bot.name,
+      ownerNickname: owner.nickname,
+      ownerLogin: owner.login,
+      ownerAgeBand: owner.age_band,
+      tools: { leads: tools.leads === true, image: tools.image === true, knowledge: tools.knowledge === true },
+      telegramUsername: bot.telegram_token_ciphertext ? bot.telegram_bot_username : null,
+      leadsCount: counters.get(bot.id)?.leads ?? 0,
+      guestMessagesWeek: counters.get(bot.id)?.messages ?? 0,
+      updatedAt: bot.updated_at,
+    };
+  });
   return { group: { id: group.id, code: group.code, title: group.title, endsOn: group.endsOn }, bots: rows };
 }

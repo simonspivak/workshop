@@ -6,13 +6,14 @@ import { getUser } from "@/lib/server/dal/auth";
 /*
   GET /app/bot/leads.csv — заявки бота текущего пользователя в CSV.
   Только владелец (сессия), только свой бот. Выгрузка личных данных пишется в аудит.
+  Все заявки — страницами по 1000 (lib/server/supabase/paging.ts), без молчаливого обрезания.
 */
 
 export async function GET() {
   const user = await getUser();
   if (!user) return new Response("Войдите, чтобы продолжить.", { status: 401 });
 
-  const [summary, result] = await Promise.all([getMyBotSummary(user), listMyLeads(user)]);
+  const [summary, result] = await Promise.all([getMyBotSummary(user), listMyLeads(user, { all: true })]);
   if (!summary || !result) return new Response("Бота пока нет.", { status: 404 });
 
   const csv = leadsToCsv(

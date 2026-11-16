@@ -73,13 +73,23 @@ export function deleteWebhook(token: string): Promise<TelegramResult<boolean>> {
 }
 
 /** Простой текст, без parse_mode и превью ссылок. Telegram принимает до 4096 символов. */
-export function sendMessage(token: string, chatId: number, text: string): Promise<TelegramResult<unknown>> {
+export function sendMessage(
+  token: string,
+  chatId: number,
+  text: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<TelegramResult<unknown>> {
   const safe = text.length > 4000 ? `${text.slice(0, 3990)}…` : text;
-  return call(token, "sendMessage", {
-    chat_id: chatId,
-    text: safe || "…",
-    link_preview_options: { is_disabled: true },
-  });
+  return call(
+    token,
+    "sendMessage",
+    {
+      chat_id: chatId,
+      text: safe || "…",
+      link_preview_options: { is_disabled: true },
+    },
+    timeoutMs,
+  );
 }
 
 /** «Печатает…» — пока бот думает. Ошибку можно игнорировать. */

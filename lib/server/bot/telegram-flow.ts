@@ -4,7 +4,14 @@ import { acceptMessage, completeMessage, type BrainInput, type BrainResult } fro
 import { defaultGreeting, parseSoulExtras } from "@/lib/server/bot/prompt";
 import { hashSender, ownerLinkCode, sameCode, telegramConversationId } from "@/lib/server/bot/secrets";
 import { setTelegramOwnerChat, wipeTelegram, type BotRecord } from "@/lib/server/bot/store";
-import { deleteWebhook, readCommand, sendMessage, sendTyping, type TelegramMessage } from "@/lib/server/bot/telegram";
+import {
+  deleteWebhook,
+  readCommand,
+  sendMessage,
+  sendTyping,
+  type TelegramError,
+  type TelegramMessage,
+} from "@/lib/server/bot/telegram";
 import { decryptSecret } from "@/lib/server/crypto";
 
 /*
@@ -66,11 +73,41 @@ export async function planTelegramMessage(bot: BotRecord, message: TelegramMessa
   return { kind: "send", text: accepted.text };
 }
 
-/** Медленная часть: модель и ответ. Вызывать в after(). */
-export async function runTelegramReply(bot: BotRecord, chatId: number, input: BrainInput, messageId: number): Promise<void> {
+/** Повтор отправки ответа (аудит № 49): один раз, коротко, и только пока after() укладывается в 60 с. */
+export const TELEGRAM_RETRY = {
+  /** пауза перед повтором */
+  delayMs: 1_500,
+  /** таймаут повторной отправки (первая — обычные 8 с) */
+  timeoutMs: 4_000,
+  /** повторяем, только если с начала ответа прошло не больше — иначе не уложиться в maxDuration 60 с */
+  maxElapsedMs: 48_000,
+} as const;
+
+const RETRYABLE: readonly TelegramError[] = ["timeout", "network", "server", "rate_limited"];
+
+/**
+ * Медленная часть: модель и ответ. Вызывать в after().
+ * Звёзды списываются, когда модель ответила (до отправки): иначе ответ пришлось бы отдавать
+ * до списания. Поэтому отправку проверяем: сбой сети или Telegram — один повтор; не доставили —
+ * запись в журнал аудита с ключом списания (по нему админ вернёт звезду начислением).
+ */
+export async function runTelegramReply(
+  bot: BotRecord,
+  chatId: number,
+  input: BrainInput,
+  messageId: number,
+  timing: { retryDelayMs?: number; now?: () => number } = {},
+): Promise<void> {
   if (!bot.telegram.token) return;
+  const now = timing.now ?? Date.now;
+  const startedAt = now();
   const token = decryptSecret(bot.telegram.token);
-  await sendTyping(token, chatId);
+  const typing = await sendTyping(token, chatId);
+  // Токен отозван в @BotFather: ответ всё равно не доставить — модель не зовём, звёзды не тратим
+  if (!typing.ok && typing.error === "unauthorized") {
+    console.error("tg.reply: token rejected, reply skipped", { bot: bot.id });
+    return;
+  }
   let result: BrainResult;
   try {
     result = await completeMessage(input, messageId);
@@ -79,7 +116,25 @@ export async function runTelegramReply(bot: BotRecord, chatId: number, input: Br
     result = { status: "error", text: "Что-то сломалось. Попробуйте ещё раз чуть позже." };
   }
   const text = result.status === "ok" && result.lead === "saved" ? `${result.text}\n\n${TELEGRAM_TEXTS.leadSaved}` : result.text;
-  if (text) await sendMessage(token, chatId, text);
+  if (!text) return;
+
+  let sent = await sendMessage(token, chatId, text);
+  if (!sent.ok && RETRYABLE.includes(sent.error) && now() - startedAt <= TELEGRAM_RETRY.maxElapsedMs) {
+    await new Promise((resolve) => setTimeout(resolve, timing.retryDelayMs ?? TELEGRAM_RETRY.delayMs));
+    sent = await sendMessage(token, chatId, text, TELEGRAM_RETRY.timeoutMs);
+  }
+  if (sent.ok) return;
+
+  console.error("tg.reply: not delivered", { bot: bot.id, error: sent.error });
+  if (result.status !== "ok") return;
+  await audit({
+    actorId: null,
+    action: "bot.telegram_send_failed",
+    targetUser: bot.ownerId,
+    targetGroup: bot.owner.group?.id ?? null,
+    // conversation — псевдоним чата (HMAC), сам chat id не пишем
+    meta: { bot: bot.id, conversation: input.conversationId, chargeKey: input.chargeKey, stars: result.stars, error: sent.error },
+  });
 }
 
 export async function sendTelegramText(bot: BotRecord, chatId: number, text: string): Promise<void> {

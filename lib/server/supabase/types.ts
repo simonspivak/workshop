@@ -393,6 +393,26 @@ export type Database = {
         };
         Returns: { affected: number; skipped: number; total: number; already: boolean }[];
       };
+      // боты (20261116180000_bot_low): счётчики «Боты группы» и открытка гостю с лимитами
+      group_bot_counters: {
+        Args: { p_bot_ids: string[]; p_since: string };
+        Returns: { bot_id: string; leads_count: number; guest_messages: number }[];
+      };
+      create_bot_card_job: {
+        Args: {
+          p_user: string;
+          p_action: JobAction;
+          p_model: string;
+          p_stars: number;
+          p_idempotency_key: string;
+          p_params: Json;
+          p_prompt: string | null;
+          p_task_ref: string;
+          p_daily_limit: number;
+          p_active_limit: number;
+        };
+        Returns: { job_id: string; balance: number; reused: boolean }[];
+      };
       rate_limit_hit: { Args: { p_key: string; p_limit: number; p_window_seconds: number }; Returns: boolean };
       rate_limit_reset: { Args: { p_key: string }; Returns: undefined };
       // 20261116150000_login_limits: занять попытку (id или null — лимит) и вернуть именно её

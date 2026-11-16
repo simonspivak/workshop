@@ -178,26 +178,42 @@ function normalizeForLeak(text: string): string {
   return text.toLowerCase().replace(/ё/g, "е").replace(/[«»"„“”']/g, "").replace(/\s+/g, " ").trim();
 }
 
+/** Только слова: пунктуация и пробелы не важны («;» → «,», лишний пробел не прячут дамп). */
+function wordsForLeak(text: string): string {
+  return normalizeForLeak(text).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 const EXEMPT_LABELS = /^(кто ты|приветствие|кнопки)\s*:/i;
+
+/**
+ * Заголовки и подписи, которые есть только в промпте и в шаблоне характера, а в обычном ответе
+ * не встречаются (аудит № 44): разделители, «ПРАВИЛА ПЛАТФОРМЫ», «ХАРАКТЕР БОТА v1», разделы
+ * инструментов, служебные строки, заголовки сообщения собеседника.
+ */
+const PROMPT_MARKERS =
+  /правила платформы|<<<|>>>|характер>>>|справка>>>|блок характер|блок справка|характер бота v\d|инструмент заявка|инструмент открытка|служебн\S* строк|новое сообщение собеседника/;
 
 /**
  * Похоже, что модель выдала инструкции: служебные заголовки промпта, строку характера
  * вместе с её подписью («Чего никогда не делаешь: …») или две и больше строк характера подряд.
- * Одну фразу из характера (например, «Я тётя Фира…») повторять можно — это нормальный ответ.
+ * Сравнение — по словам, без пунктуации. Одну фразу из характера (например, «Я тётя Фира…»)
+ * повторять можно — это нормальный ответ. Пересказ и перевод лексической проверкой не поймать:
+ * от них защищают правила 2–3 промпта. Справку не сравниваем: по ней бот и должен отвечать.
  */
 export function leaksInstructions(reply: string, soul: string): boolean {
   const out = normalizeForLeak(reply);
   if (!out) return false;
-  if (/правила платформы|<<<|>>>|характер>>>|справка>>>|блок характер|блок справка/.test(out)) return true;
+  if (PROMPT_MARKERS.test(out)) return true;
+  const words = wordsForLeak(reply);
 
   let echoed = 0;
   for (const rawLine of soul.split(/\r?\n/)) {
     const line = normalizeForLeak(rawLine);
-    if (line.length < 20) continue;
+    if (line.length < 20 || EXEMPT_LABELS.test(line)) continue;
     const labelled = /^[^:]{3,40}:\s*\S/.test(line);
-    if (labelled && !EXEMPT_LABELS.test(line) && out.includes(line.slice(0, 60))) return true;
-    const content = labelled ? line.replace(/^[^:]{3,40}:\s*/, "") : line;
-    if (content.length >= 40 && !EXEMPT_LABELS.test(line) && out.includes(content.slice(0, 60))) echoed++;
+    if (labelled && words.includes(wordsForLeak(line).slice(0, 60))) return true;
+    const content = wordsForLeak(labelled ? line.replace(/^[^:]{3,40}:\s*/, "") : line);
+    if (content.length >= 40 && words.includes(content.slice(0, 60))) echoed++;
     if (echoed >= 2) return true;
   }
   return false;
