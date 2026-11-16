@@ -56,6 +56,8 @@ type PriceRow = {
   enabled: boolean;
   position: number;
   label: string | null;
+  /** оценка кредитов kie за задачу (видео — за 5 с), для потолка ведущих (20261116120000_staff_caps) */
+  kie_credits: number | null;
   updated_at: string;
 };
 
@@ -78,6 +80,8 @@ type JobRow = Timestamps & {
   mime_type: string | null;
   result_text: string | null;
   credits: number | null;
+  /** оценка кредитов kie при создании задачи (create_job) */
+  kie_estimate: number | null;
   error: string | null;
   hidden: boolean;
   hidden_by: string | null;

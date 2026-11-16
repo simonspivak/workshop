@@ -3,7 +3,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowRight } from "lucide-react";
 import { CreateGroupForm } from "./CreateGroupForm";
-import { requireStaff } from "@/lib/server/dal/auth";
+import { GenerationSwitch, StaffLimitsForm } from "./AdminControls";
+import { getAdminPanel, type KieBalance } from "@/lib/server/dal/admin";
+import { requireRole, requireStaff } from "@/lib/server/dal/auth";
 import { listGroups } from "@/lib/server/dal/teacher";
 import { groupKindLabels } from "@/lib/platform/messages";
 import { Badge, Card, Container, PageTitle, Skeleton } from "@/components/platform/ui";
@@ -31,6 +33,12 @@ async function Groups() {
       <PageTitle eyebrow={user.role === "admin" ? "Админ · все группы" : "Кабинет ведущего"} title="Группы">
         Создайте группу, затем добавьте учеников пачкой: логины и пароли покажем один раз для печати карточек.
       </PageTitle>
+
+      {user.role === "admin" && (
+        <Suspense fallback={<Skeleton className="mb-10 h-48" />}>
+          <AdminPanel />
+        </Suspense>
+      )}
 
       {groups.length === 0 ? (
         <p className="mb-8 rounded-3xl bg-lavender p-5 text-ink-soft">Групп пока нет.</p>
@@ -64,6 +72,34 @@ async function Groups() {
       <Card title="Новая группа">
         <CreateGroupForm />
       </Card>
+    </>
+  );
+}
+
+/** Пульт админа: «Стоп генераций», баланс kie (кеш ~60 с), потолки ведущих. */
+async function AdminPanel() {
+  await requireRole(["admin"]);
+  const panel = await getAdminPanel();
+  return (
+    <div className="mb-10 grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <Card title="Генерации" description={<KieBalanceLine kie={panel.kie} />}>
+        <GenerationSwitch enabled={panel.generationEnabled} />
+      </Card>
+      <Card title="Потолки ведущих" className="lg:col-span-2">
+        <StaffLimitsForm limits={panel.limits} />
+      </Card>
+    </div>
+  );
+}
+
+function KieBalanceLine({ kie }: { kie: KieBalance }) {
+  if (kie.state === "mock") return <>Баланс kie: mock-режим, шлюз не подключён.</>;
+  if (kie.state === "error" || kie.credits === null) return <>Баланс kie: шлюз не ответил.</>;
+  const credits = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(kie.credits);
+  const usd = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(kie.credits * 0.005);
+  return (
+    <>
+      Баланс kie: {credits} кредитов (≈ ${usd}). Обновляется раз в минуту.
     </>
   );
 }
