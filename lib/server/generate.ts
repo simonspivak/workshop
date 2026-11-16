@@ -8,13 +8,16 @@ import { appUrl } from "@/lib/server/env";
 import {
   createTask,
   generateText,
+  isAccountFailure,
   isGatewayModel,
+  isPermanentFailure,
+  type GatewayFailure,
   type ModelFor,
   type TaskRequest,
   type VideoRequest,
 } from "@/lib/server/gateway";
 import { loadJob, toJobView } from "@/lib/server/job-progress";
-import { refundReason } from "@/lib/server/job-rules";
+import { jobErrorCode, refundReason, type JobErrorCode } from "@/lib/server/job-rules";
 import { completeJob, markJobSubmitted } from "@/lib/server/jobs";
 import type { ReferenceInput } from "@/lib/server/media-refs";
 import { moderateFields } from "@/lib/server/moderation";
@@ -138,6 +141,8 @@ const WALLET_STATUS: Record<WalletError, number> = {
   insufficient_stars: 409,
   group_paused: 409,
   daily_cap: 409,
+  staff_daily_cap: 429,
+  grant_limit: 409,
   generation_disabled: 503,
   too_many_jobs: 429,
   unknown_model: 400,
@@ -297,11 +302,37 @@ function invalid(field: string): GenerateOutcome {
   return { kind: "error", status: 400, error: "invalid_input", field };
 }
 
-/** Двойной клик: та же задача. Текст отдаём, если он уже готов; иначе клиент опрашивает /api/jobs. */
+/**
+ * Текстовая задача в очереди дольше этого — запрос, который её вёл, точно оборвался
+ * (maxDuration /api/generate 60 с): при повторе с тем же ключом сразу возвращаем звёзды.
+ */
+const DEAD_TEXT_JOB_MS = 65_000;
+
+/**
+ * Повтор с тем же ключом: двойной клик или повтор после обрыва ответа (504 без JSON, сеть).
+ * Готовый текст отдаём; неудавшуюся задачу — ошибкой (клиент возьмёт новый ключ, новый клик создаст
+ * новую задачу); текст, чей запрос оборвался, — возврат звёзд сейчас, а не через 90 с опроса.
+ * Иначе клиент опрашивает /api/jobs.
+ */
 async function replayOutcome(jobId: string, balance: number): Promise<GenerateOutcome> {
   const job = await loadJob(jobId);
   if (job?.action === "text" && job.status === "done") return { kind: "text", job: await toJobView(job), balance };
+  if (job?.status === "failed") {
+    return { kind: "error", status: 502, error: jobErrorCode(job.error) ?? "gateway_error", jobId };
+  }
+  if (job?.action === "text" && job.status === "queued" && Date.now() - Date.parse(job.created_at) > DEAD_TEXT_JOB_MS) {
+    await refundJob(jobId, refundReason("gateway_lost", "request lost before reply"));
+    return { kind: "error", status: 502, error: "gateway_lost", jobId };
+  }
   return { kind: "accepted", jobId, balance, reused: true };
+}
+
+/** Отказ шлюза → код ошибки задачи: постоянный отказ kie не выдаём за перегрузку. */
+function gatewayErrorCode(result: GatewayFailure): JobErrorCode {
+  if (!isPermanentFailure(result)) return "gateway_error";
+  // в логах Vercel видна настоящая причина: код kie, а не только «502»
+  console.error("generate: gateway rejected", { kieCode: result.kieCode ?? null, httpStatus: result.httpStatus ?? null, error: result.error });
+  return isAccountFailure(result) ? "gateway_unavailable" : "gateway_rejected";
 }
 
 async function runText(
@@ -316,8 +347,9 @@ async function runText(
     maxTokens: request.maxTokens,
   });
   if (!result.ok) {
-    await refundJob(jobId, refundReason("gateway_error", result.error));
-    return { kind: "error", status: 502, error: "gateway_error", jobId };
+    const code = gatewayErrorCode(result);
+    await refundJob(jobId, refundReason(code, result.error));
+    return { kind: "error", status: 502, error: code, jobId };
   }
   await completeJob(jobId, { text: result.text.slice(0, 20_000), credits: result.credits });
   const job = await loadJob(jobId);
@@ -326,20 +358,21 @@ async function runText(
 }
 
 async function submitTask(jobId: string, balance: number, request: TaskRequest): Promise<GenerateOutcome> {
-  const result = await createTask(request);
+  const result = await createTask(request, { jobId });
   if (result.ok) {
     const marked = await markJobSubmitted(jobId, result.taskId);
     if (!marked) console.error("generate: job left the queue before submit", { jobId });
     return { kind: "accepted", jobId, balance, reused: false };
   }
   if (result.uncertain) {
-    // kie мог принять задачу: повторять нельзя. Задача останется в очереди, через несколько
-    // минут опрос вернёт звёзды (job-rules: isQueuedWithoutTaskTooLong).
+    // kie мог принять задачу: повторять нельзя. Задача останется в очереди, через 90 с
+    // опрос вернёт звёзды (job-rules: isQueuedWithoutTaskTooLong).
     console.error("generate: gateway result uncertain", { jobId, error: result.error });
     return { kind: "accepted", jobId, balance, reused: false };
   }
-  await refundJob(jobId, refundReason("gateway_error", result.error));
-  return { kind: "error", status: 502, error: "gateway_error", jobId };
+  const code = gatewayErrorCode(result);
+  await refundJob(jobId, refundReason(code, result.error));
+  return { kind: "error", status: 502, error: code, jobId };
 }
 
 // ---------- сборка запроса к шлюзу ----------

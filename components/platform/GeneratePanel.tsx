@@ -196,7 +196,8 @@ export function GeneratePanel({
     const result = await postGenerate(body);
     setPending(false);
     if (!result.ok) {
-      if (!result.network) keyRef.current = null;
+      // после обрыва (сеть, 5xx без ответа маршрута) ключ тот же: повтор найдёт ту же задачу
+      if (!result.network && !result.infra) keyRef.current = null;
       setError(result.error);
       return;
     }

@@ -4,22 +4,37 @@ import { BOT_LIMITS } from "@/lib/server/bot/limits";
 
 /*
   Лимиты сообщений гостей (docs/platform/spec.md §5):
-    • 30 сообщений в час с одного IP (веб) или из одного чата (Telegram) — на все боты;
-    • 200 сообщений гостей в сутки на бота.
-  Счётчики — по таблице bot_messages (индексы bot_messages_ip_idx и bot_messages_bot_day_idx).
-  Окончательная проверка — в SQL при записи сообщения (insert_bot_message, под блокировкой),
-  rateLimitDecision здесь — быстрый отказ до неё. IPv6 считается по сети /64 (ipRateLimitKey).
+    • 30 сообщений в час от одного посетителя — на все боты. Посетитель — conversation_id:
+      web:<сессия гостя из cookie> или tg:<чат>. Класс за одним Wi-Fi друг другу не мешает;
+    • 600 сообщений гостей в час из одной сети (хеш IP, только веб) — на все боты: защита от
+      скрипта, который каждый раз приходит без cookie (новая сессия = новый посетитель);
+    • 200 сообщений гостей в сутки на бота;
+    • общий потолок платформы в сутки (settings.bot_guest_daily_global) — только в SQL.
+  Счётчики — по таблице bot_messages (индексы bot_messages_conv_hour_idx, bot_messages_ip_idx,
+  bot_messages_bot_day_idx). Окончательная проверка — в SQL при записи сообщения
+  (insert_bot_message, под блокировкой), rateLimitDecision здесь — быстрый отказ до неё.
+  IPv6 считается по сети /64 (ipRateLimitKey).
   IP и chat id не храним: только HMAC с ключом, выведенным из BOT_TOKEN_KEY, и датой —
   хеш меняется каждый день, поэтому по нему нельзя проследить гостя дольше суток.
 */
 
-export type RateLimitHit = "sender_hour" | "bot_day";
+export type RateLimitHit = "sender_hour" | "network_hour" | "bot_day" | "global_day";
 
-export function rateLimitDecision(
-  counts: { senderLastHour: number | null; botLastDay: number },
-  limits: { senderPerHour: number; botPerDay: number } = BOT_LIMITS,
-): RateLimitHit | null {
-  if (counts.senderLastHour !== null && counts.senderLastHour >= limits.senderPerHour) return "sender_hour";
+export type RateLimitCounts = {
+  /** сообщений этого посетителя за час (на все боты); null — не считаем (проверка владельцем) */
+  visitorLastHour: number | null;
+  /** сообщений гостей из этой сети за час; null — не считаем (Telegram, проверка владельцем) */
+  networkLastHour: number | null;
+  botLastDay: number;
+};
+
+export type RateLimits = { senderPerHour: number; networkPerHour: number | null; botPerDay: number };
+
+export function rateLimitDecision(counts: RateLimitCounts, limits: RateLimits = BOT_LIMITS): RateLimitHit | null {
+  if (counts.visitorLastHour !== null && counts.visitorLastHour >= limits.senderPerHour) return "sender_hour";
+  if (counts.networkLastHour !== null && limits.networkPerHour !== null && counts.networkLastHour >= limits.networkPerHour) {
+    return "network_hour";
+  }
   if (counts.botLastDay >= limits.botPerDay) return "bot_day";
   return null;
 }

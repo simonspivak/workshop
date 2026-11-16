@@ -40,6 +40,8 @@ export type MyBotView = {
   avatarJobId: string | null;
   avatarUrl: string | null;
   active: boolean;
+  /** пауза владельца */
+  paused: boolean;
   publicPath: string;
   lifetime: BotLifetime;
   /** «Контакт» в заявке и Telegram: владелец 18+ или ведущий */
@@ -85,6 +87,7 @@ export async function getMyBot(user: SessionUser): Promise<MyBotView | null> {
     avatarJobId: path ? bot.avatarJobId : null,
     avatarUrl: path ? await signedMediaUrl(path) : null,
     active: bot.active,
+    paused: bot.paused,
     publicPath: `/b/${bot.slug}`,
     lifetime: lifetimeOf(bot),
     adult: isAdultOwner(bot.owner),
@@ -201,6 +204,8 @@ export type PublicBotView =
       leads: boolean;
       contactInLeads: boolean;
       cards: boolean;
+      /** пауза владельца: страница открывается, бот отвечает «на паузе» */
+      paused: boolean;
     }
   | { state: "retired"; slug: string; name: string; avatarUrl: string | null };
 
@@ -226,6 +231,7 @@ export async function getPublicBot(slug: string, sessionId: string | null): Prom
     contactInLeads:
       leads && isAdultOwner(bot.owner) && Boolean(bot.tools.leadForm?.fields.some((f) => f.type === "contact")),
     cards: cardsAvailable(bot, "web", false),
+    paused: bot.paused,
   };
 }
 

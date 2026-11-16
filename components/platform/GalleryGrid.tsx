@@ -21,7 +21,7 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", {
 });
 
 /**
- * Сетка галереи. Незавершённые задачи сами опрашивают /api/jobs/[id] раз в 5 секунд.
+ * Сетка галереи. Незавершённые задачи сами опрашивают /api/jobs/[id] (расписание — lib/platform/job-poll.ts).
  * Ученик: «Как референс» кладёт файл в корзину референсов для форм генерации в уроках;
  * свои результаты можно удалить (мягко, без возврата звёзд). Ведущий: скрыть / показать
  * результат (hideAction — Server Action с аудитом) и удалить результат ученика.
@@ -63,13 +63,14 @@ function GalleryCard({
   hideAction?: HideAction;
   onDeleted: (jobId: string) => void;
 }) {
-  const job = useLiveJob(item);
+  const live = useLiveJob(item);
+  const job = live.job;
   // своё — ученик и ведущий; чужое в группе — только ведущий (сервер проверяет группу)
   const deletable = canDeleteJob(job) && (item.mine || mode === "teacher");
   return (
     <article className="flex h-full flex-col gap-3 rounded-3xl bg-white p-4 ring-1 ring-ink/10">
       <JobMeta job={job} author={item.author} />
-      <JobStatusLine job={job} />
+      <JobStatusLine job={job} live={live} />
       <JobMedia
         job={job}
         renderFileActions={(file) => (

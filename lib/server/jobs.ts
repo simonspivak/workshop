@@ -9,7 +9,8 @@ import { createAdminClient } from "@/lib/server/supabase/admin";
        └──────────── refund_job (возврат звёзд) ────────────────────────┴──▶ failed
 
   Cron нет (Vercel Hobby): статус опрашивается лениво из GET /api/jobs/[id].
-  claimJobPoll не даёт спрашивать шлюз чаще раза в 5 секунд на задачу.
+  claimJobPoll не даёт спрашивать шлюз чаще заданного интервала на задачу
+  (интервал по действию и возрасту — lib/platform/job-poll.ts).
   Текстовые задачи синхронные: queued → complete_job сразу.
 */
 

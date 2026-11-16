@@ -14,8 +14,10 @@ import { mockMedia, type MockMediaKind } from "@/lib/server/mock-media";
     image … music   → { ok, taskId, state: 'queued' }
     status          → { ok, state, done, urls[], credits, error, lastFrame }
     balance         → { ok, credits }
-  Ошибка → { ok: false, error }. Для ошибок сети и таймаутов error — наш код
-  (gateway_unreachable, gateway_timeout, gateway_bad_response).
+  Ошибка → { ok: false, error, httpStatus?, kieCode?, uncertain? }. Для ошибок сети и таймаутов
+  error — наш код (gateway_unreachable, gateway_timeout, gateway_bad_response).
+  kieCode — код kie (поле code ответа kie), шлюз кладёт его рядом с httpStatus 502:
+  по нему отличаем постоянный отказ (нет кредитов, неверный запрос) от перегрузки и 429.
 */
 
 // ---------- модели (белый список шлюза; первая — по умолчанию) ----------
@@ -139,6 +141,8 @@ export type GatewayFailure = {
   error: string;
   /** HTTP-статус, если шлюз его вернул */
   httpStatus?: number;
+  /** код kie из тела ответа шлюза (kieCode), если шлюз его передал */
+  kieCode?: number;
   /**
    * true — неизвестно, создана ли задача у kie (таймаут или обрыв после отправки).
    * Повторять такой запрос автоматически нельзя: kie может списать дважды.
@@ -164,9 +168,11 @@ export type TaskStatusResult =
   | GatewayFailure;
 export type BalanceResult = { ok: true; credits: number | null } | GatewayFailure;
 
-// Шлюз ждёт kie не дольше 40 с (POST) и 12 с (GET): платформа ждёт дольше, чтобы не вернуть
-// звёзды за задачу, которую kie всё-таки создал. Функция живёт до 60 с (maxDuration).
-const TIMEOUT_MS = { text: 50_000, create: 45_000, status: 15_000, balance: 10_000 };
+// Шлюз ждёт kie не дольше 40 с (POST) и 12 с (GET). Создание задачи платформа ждёт дольше (45 с),
+// чтобы не вернуть звёзды за задачу, которую kie всё-таки создал. Текст — 42 с: n8n всё равно
+// обрывает kie на 40 с, а функция /api/generate живёт до 60 с (maxDuration) — остаток нужен на
+// списание и возврат звёзд (аудит № 22). Текст не бывает uncertain, ранний таймаут = ранний возврат.
+const TIMEOUT_MS = { text: 42_000, create: 45_000, status: 15_000, balance: 10_000 };
 
 // ---------- публичное API ----------
 
@@ -175,77 +181,178 @@ export function isMockMode(): boolean {
 }
 
 /*
-  kie иногда перегружен: отвечает 502/503/429 «Resources are tight, please try again later».
-  Такой отказ приходит быстро и задачу не создаёт, поэтому повторяем сами: два раза с паузой,
-  а для текста ученика основная модель — Kimi K3, запасные — Haiku и GPT 6 Luna (см. TEXT_CHAIN_FOR_HAIKU).
-  Таймаут и «неизвестно, создана ли задача» не повторяем: время кончилось или kie мог списать.
+  Повторы (docs/kie-gateway.md, «Ошибки шлюза»). Вид отказа — failureKind():
+    transient    — kie перегружен (502/503 «Resources are tight»), сеть: короткие паузы 1,5/3/5/8 с,
+                   для текста ученика — следующая модель цепочки (TEXT_CHAIN_FOR_HAIKU);
+    rate_limited — 429 (kie: ~20 новых генераций за 10 с на аккаунт, без очереди): длинные паузы
+                   ~10/12/14 с с разбросом ±30 %, чтобы класс, нажавший разом, не бился пачкой снова;
+    permanent    — kie 4xx кроме 429 (нет кредитов, неверный ключ, плохой запрос): без повторов
+                   и без запасных моделей — на том же аккаунте kie они не пройдут;
+    final        — таймаут или «неизвестно, создана ли задача»: не повторяем, kie мог списать.
 */
-// Окна перегрузки kie длятся минутами, но часть запросов проходит: 5 попыток за ~30 с
+// Окна перегрузки kie длятся минутами, но часть запросов проходит: до 5 попыток
 const RETRY_DELAYS_MS = [1500, 3000, 5000, 8000];
+// 429: окно kie — 10 с, поэтому пауза не короче окна, плюс разброс ±30 %
+const RATE_LIMIT_DELAYS_MS = [10_000, 12_000, 14_000];
+const RATE_LIMIT_JITTER = 0.3;
 /** Вся попытка с повторами укладывается в функцию (maxDuration 60 с) с запасом на базу. */
-const RETRY_BUDGET_MS = { text: 50_000, create: 45_000 };
+const RETRY_BUDGET_MS = { text: TIMEOUT_MS.text, create: TIMEOUT_MS.create };
+/** Меньше этого на следующую попытку не остаётся — не повторяем. */
+const MIN_ATTEMPT_MS = 10_000;
+/**
+ * Создание задачи: ответ без поля ok (ошибка самого n8n, не «Normalize Response») через столько
+ * времени значит, что n8n упал на ожидании kie (KIE POST режется на 40 с) — kie мог создать задачу.
+ * Быстрый такой ответ (битый ответ kie, сбой сети) остаётся временным и повторяется (аудит № 20).
+ */
+const UNCERTAIN_AFTER_MS = 30_000;
 // Решение Сени 10 ноября: основная текстовая модель — Kimi K3 (быстро и стабильно отвечает,
 // Haiku на kie весь ноябрь отказывает). Haiku и GPT — запасные. Прайс и уроки по-прежнему
 // называют модель claude-haiku-5-5 — это «чат ученика», а сюда она переводится в цепочку.
 const TEXT_CHAIN_FOR_HAIKU: ModelFor<"text">[] = ["kimi-k3", "kimi-k3", "claude-haiku-5-5", "kimi-k3", "gpt-6-luna"];
 
-/** Временный отказ kie или шлюза: можно повторить. */
-export function isTransientFailure(result: GatewayFailure): boolean {
-  if (result.uncertain || result.error === "gateway_timeout") return false;
-  if (result.error === "gateway_unreachable") return true;
-  const status = result.httpStatus ?? 0;
-  if (status === 429 || status >= 500) return true;
-  return /resources are tight|try again later|overload|capacity|too many requests|busy/i.test(result.error);
+export type FailureKind = "transient" | "rate_limited" | "permanent" | "final";
+
+/** Коды, при которых не пройдёт ни одна генерация: кредиты, ключ, доступ, адрес шлюза, техработы kie. */
+const ACCOUNT_CODES = [401, 402, 403, 404, 455, 505];
+// Текст отказа, если кода нет (текстовый маршрут шлюза пока не передаёт kieCode)
+const ACCOUNT_TEXT = /insufficient|not enough credits|credits? (?:exhausted|run out)|unauthori[sz]ed|invalid api key/i;
+const RATE_LIMIT_TEXT = /too many requests|rate limit/i;
+const TRANSIENT_TEXT = /resources are tight|try again later|overload|capacity|busy/i;
+
+/** Код отказа: kieCode, если шлюз его передал (4xx/5xx), иначе HTTP-статус ответа шлюза. */
+function failureCode(result: GatewayFailure): number {
+  const kie = result.kieCode;
+  if (kie !== undefined && kie >= 400 && kie < 600) return kie;
+  return result.httpStatus ?? 0;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+export function failureKind(result: GatewayFailure): FailureKind {
+  if (result.uncertain || result.error === "gateway_timeout") return "final";
+  if (result.error === "gateway_unreachable") return "transient";
+  const code = failureCode(result);
+  if (code === 429 || RATE_LIMIT_TEXT.test(result.error)) return "rate_limited";
+  // «перегружен, попробуйте позже» — временный отказ, с каким бы кодом kie его ни прислал
+  if (TRANSIENT_TEXT.test(result.error) && !ACCOUNT_TEXT.test(result.error)) return "transient";
+  if ((code >= 400 && code < 500) || ACCOUNT_TEXT.test(result.error)) return "permanent";
+  if (code >= 500 || TRANSIENT_TEXT.test(result.error)) return "transient";
+  return "final";
+}
+
+/** Временный отказ kie или шлюза: можно повторить. */
+export function isTransientFailure(result: GatewayFailure): boolean {
+  const kind = failureKind(result);
+  return kind === "transient" || kind === "rate_limited";
+}
+
+/** Постоянный отказ (kie 4xx кроме 429): повтор не поможет. */
+export function isPermanentFailure(result: GatewayFailure): boolean {
+  return failureKind(result) === "permanent";
+}
+
+/** Постоянный отказ всего аккаунта kie или шлюза (нет кредитов, ключ): нужен ведущий. */
+export function isAccountFailure(result: GatewayFailure): boolean {
+  return isPermanentFailure(result) && (ACCOUNT_CODES.includes(failureCode(result)) || ACCOUNT_TEXT.test(result.error));
+}
+
+/** Время и случайность повторов. В тестах подменяется (options.clock). */
+export type RetryClock = { now: () => number; random: () => number; sleep: (ms: number) => Promise<void> };
+
+const realClock: RetryClock = {
+  now: () => Date.now(),
+  random: () => Math.random(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/** Пауза перед повтором номер retryIndex + 1 (0 — перед второй попыткой) после отказа failure. */
+export function retryDelayMs(failure: GatewayFailure, retryIndex: number, random: () => number): number {
+  const pick = (list: number[]) => list[Math.min(retryIndex, list.length - 1)];
+  if (failureKind(failure) !== "rate_limited") return pick(RETRY_DELAYS_MS);
+  const spread = 1 - RATE_LIMIT_JITTER + 2 * RATE_LIMIT_JITTER * random();
+  return Math.round(pick(RATE_LIMIT_DELAYS_MS) * spread);
+}
 
 /** Повторы: attempt(i, timeoutMs) вызывается, пока ответ временный и хватает времени. */
 async function withRetries<T extends { ok: true } | GatewayFailure>(
   budgetMs: number,
   attempts: number,
   attempt: (index: number, timeoutMs: number) => Promise<T>,
+  clock: RetryClock,
 ): Promise<T> {
-  const started = Date.now();
+  const started = clock.now();
   let result = await attempt(0, budgetMs);
   for (let i = 1; i < attempts; i++) {
     if (result.ok || !isTransientFailure(result)) return result;
-    const delay = RETRY_DELAYS_MS[i - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
-    const left = budgetMs - (Date.now() - started) - delay;
-    if (left < 10_000) return result;
-    await sleep(delay);
+    const delay = retryDelayMs(result, i - 1, clock.random);
+    const left = budgetMs - (clock.now() - started) - delay;
+    if (left < MIN_ATTEMPT_MS) return result;
+    await clock.sleep(delay);
     result = await attempt(i, left);
   }
   return result;
 }
 
+/** Необязательные настройки вызова шлюза. clock — только для тестов. */
+export type GatewayCallOptions = { clock?: RetryClock };
+export type GenerateTextOptions = GatewayCallOptions & {
+  /** не больше стольких попыток (боты: публичный запрос не ждёт всю цепочку) */
+  maxAttempts?: number;
+  /** потолок ожидания одной попытки, мс (боты: гость не ждёт 40 с зависшей модели) */
+  attemptTimeoutMs?: number;
+};
+export type CreateTaskOptions = GatewayCallOptions & {
+  /**
+   * id задачи платформы: уходит в шлюз полем jobId, одинаковым во всех повторах этой задачи.
+   * По нему шлюз может не создавать у kie вторую задачу и найти потерянный taskId (docs/kie-gateway.md).
+   */
+  jobId?: string;
+};
+
 /** Синхронный текст (Claude Haiku по умолчанию). При перегрузке kie — повторы и запасная модель. */
-export async function generateText(request: Omit<TextRequest, "action">): Promise<TextResult> {
+export async function generateText(request: Omit<TextRequest, "action">, options: GenerateTextOptions = {}): Promise<TextResult> {
   const config = gatewayConfig();
   if (config.mode === "mock") return mockText(request);
+  const clock = options.clock ?? realClock;
   const primary = request.model ?? GATEWAY_MODELS.text[0];
   const models: ModelFor<"text">[] =
     primary === "claude-haiku-5-5" ? TEXT_CHAIN_FOR_HAIKU : [primary, primary, primary, primary, primary];
-  return withRetries<TextResult>(RETRY_BUDGET_MS.text, models.length, async (i, timeoutMs) => {
-    const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs), false);
-    if (!res.ok) return res;
-    const body = res.body;
-    if (body.ok !== true || typeof body.text !== "string") return failure(body, res.status);
-    return { ok: true, text: body.text, model: str(body.model) ?? models[i], credits: num(body.credits) };
-  });
+  const attempts = Math.min(models.length, options.maxAttempts ?? models.length);
+  return withRetries<TextResult>(
+    RETRY_BUDGET_MS.text,
+    attempts,
+    async (i, timeoutMs) => {
+      const res = await post(config, { action: "text", ...request, model: models[i] }, Math.min(TIMEOUT_MS.text, timeoutMs, options.attemptTimeoutMs ?? TIMEOUT_MS.text), false);
+      if (!res.ok) return res;
+      const body = res.body;
+      if (body.ok !== true || typeof body.text !== "string") return failure(body, res.status);
+      return { ok: true, text: body.text, model: str(body.model) ?? models[i], credits: num(body.credits) };
+    },
+    clock,
+  );
 }
 
 /** Создать задачу (картинка, видео, движение, говорящая голова, озвучка, музыка). */
-export async function createTask(request: TaskRequest): Promise<CreateTaskResult> {
+export async function createTask(request: TaskRequest, options: CreateTaskOptions = {}): Promise<CreateTaskResult> {
   const config = gatewayConfig();
   if (config.mode === "mock") return mockCreate(request);
-  return withRetries<CreateTaskResult>(RETRY_BUDGET_MS.create, 4, async (_i, timeoutMs) => {
-    const res = await post(config, request as unknown as Record<string, unknown>, Math.min(TIMEOUT_MS.create, timeoutMs), true);
-    if (!res.ok) return res;
-    const body = res.body;
-    if (body.ok !== true || typeof body.taskId !== "string" || !body.taskId) return failure(body, res.status);
-    return { ok: true, taskId: body.taskId, model: str(body.model), state: str(body.state) ?? "queued" };
-  });
+  const clock = options.clock ?? realClock;
+  const payload: Record<string, unknown> = { ...request, ...(options.jobId ? { jobId: options.jobId } : {}) };
+  return withRetries<CreateTaskResult>(
+    RETRY_BUDGET_MS.create,
+    4,
+    async (_i, timeoutMs) => {
+      const sentAt = clock.now();
+      const res = await post(config, payload, Math.min(TIMEOUT_MS.create, timeoutMs), true);
+      if (!res.ok) return res;
+      const body = res.body;
+      if (body.ok !== true || typeof body.taskId !== "string" || !body.taskId) {
+        const failed = failure(body, res.status);
+        const n8nCrashedWaiting = !("ok" in body) && res.status >= 500 && clock.now() - sentAt >= UNCERTAIN_AFTER_MS;
+        return body.uncertain === true || n8nCrashedWaiting ? { ...failed, uncertain: true } : failed;
+      }
+      return { ok: true, taskId: body.taskId, model: str(body.model), state: str(body.state) ?? "queued" };
+    },
+    clock,
+  );
 }
 
 /** Статус задачи. done = true при state success или fail. */
@@ -436,7 +543,16 @@ async function post(
 
 function failure(body: RawBody, status: number): GatewayFailure {
   const httpStatus = num(body.httpStatus) ?? status;
-  return { ok: false, error: (str(body.error) ?? "gateway_bad_response").slice(0, 300), httpStatus };
+  const result: GatewayFailure = { ok: false, error: (str(body.error) ?? "gateway_bad_response").slice(0, 300), httpStatus };
+  const kieCode = intCode(body.kieCode);
+  if (kieCode !== null) result.kieCode = kieCode;
+  return result;
+}
+
+/** Код kie: число или строка из цифр ("402"); остальное — нет кода. */
+function intCode(value: unknown): number | null {
+  const n = typeof value === "string" && /^\d{1,4}$/.test(value.trim()) ? Number(value) : value;
+  return typeof n === "number" && Number.isInteger(n) ? n : null;
 }
 
 function str(value: unknown): string | undefined {
