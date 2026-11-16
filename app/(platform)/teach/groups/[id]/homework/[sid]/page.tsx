@@ -11,7 +11,13 @@ import { getLessonById } from "@/lib/server/course";
 import { requireStaff } from "@/lib/server/dal/auth";
 import { getGroup, isUuid } from "@/lib/server/dal/teacher";
 import { getHomeworkForTeacher } from "@/lib/server/homework/submissions";
-import { formatBytes, gradingProgressText, homeworkKindLabels, homeworkStatusLabels } from "@/lib/platform/homework-types";
+import {
+  formatBytes,
+  gradingProgressText,
+  homeworkKindLabels,
+  homeworkStatusLabels,
+  TEACHER_ATTACHMENTS_HINT,
+} from "@/lib/platform/homework-types";
 import { PLATFORM_TIME_ZONE } from "@/lib/platform/time-zone";
 
 export const metadata: Metadata = { title: "Домашка ученика" };
@@ -99,7 +105,7 @@ async function Detail({ params }: { params: Promise<{ id: string; sid: string }>
             {homework.attachments.length > 0 && (
               <div className="mt-4">
                 <HomeworkAttachmentGrid items={homework.attachments} />
-                <p className="mt-2 text-sm text-ink-soft">ИИ видео и картинки не смотрит: он проверил число, тип, длину и промпты. Качество — за вами.</p>
+                <p className="mt-2 text-sm text-ink-soft">{TEACHER_ATTACHMENTS_HINT}</p>
               </div>
             )}
             {homework.aiNote && <Notice className="mt-4">{homework.aiNote}</Notice>}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check, Images, LoaderCircle, X } from "lucide-react";
 import { AttachmentCaption, AttachmentMedia, attachmentSummary } from "@/components/platform/HomeworkAttachments";
 import { buttonClass, hintClass, labelClass } from "@/components/platform/ui";
-import { MAX_HOMEWORK_ATTACHMENTS, type HomeworkAttachmentView } from "@/lib/platform/homework-types";
+import { GALLERY_AI_HINT, MAX_HOMEWORK_ATTACHMENTS, type HomeworkAttachmentView } from "@/lib/platform/homework-types";
 
 /*
   «Прикрепить из галереи» в форме домашки: свои готовые картинки, видео, озвучка, музыка и монтаж
@@ -107,7 +107,7 @@ export function HomeworkGalleryPicker({
           ) : (
             <>
               <p className={hintClass}>
-                Отметь нужные (до {MAX_HOMEWORK_ATTACHMENTS}). ИИ не смотрит видео и картинки: он проверит, сколько их и какой они длины, а качество оценит ведущий.
+                Отметь нужные (до {MAX_HOMEWORK_ATTACHMENTS}). {GALLERY_AI_HINT}
               </p>
               <ul className="mt-3 grid max-h-[28rem] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
                 {state.items.map((item) => {

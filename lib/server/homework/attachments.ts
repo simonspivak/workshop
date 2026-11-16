@@ -9,7 +9,9 @@ import type { Json } from "@/lib/server/supabase/types";
 import type { JobAction, JobStatus } from "@/lib/platform/generation-types";
 import type { HomeworkAttachmentView } from "@/lib/platform/homework-types";
 import { ATTACHABLE_ACTIONS, attachmentDuration, attachmentIds, checkAttachmentRows, type AttachmentCheck } from "./attachment-rules";
-import type { AttachmentForGrading } from "./rubric";
+import type { GalleryImage } from "./images";
+
+export { attachmentsForGrading } from "./attachment-rules";
 
 /*
   Результаты из галереи в домашке (docs/platform/spec.md «Домашки»). В сдаче хранятся только
@@ -102,9 +104,43 @@ export async function loadAttachments(
 ): Promise<HomeworkAttachmentView[]> {
   const ids = attachmentIds(value);
   if (ids.length === 0) return [];
+  const jobs = await ownJobs(ownerId, ids);
+  return orderedViews(ids, await toViews(jobs, { revealHidden: options.revealHidden ?? false, sign: options.sign ?? true }));
+}
+
+async function ownJobs(ownerId: string, ids: string[]): Promise<JobForAttachment[]> {
   const { data, error } = await createAdminClient().from("jobs").select(COLUMNS).in("id", ids).eq("user_id", ownerId).returns<JobForAttachment[]>();
   if (error) throw new Error(`homework.loadAttachments failed (${error.code})`);
-  const views = await toViews(data ?? [], { revealHidden: options.revealHidden ?? false, sign: options.sign ?? true });
+  return data ?? [];
+}
+
+/**
+ * Для проверки ИИ: прикреплённое по порядку выбора (без ссылок) и картинки из него —
+ * готовые картинки и правки картинок, не удалённые и не скрытые ведущим, с путём в бакете.
+ * Ссылки на картинки подписывает grade.ts, когда выбраны те, что уйдут модели.
+ */
+export async function loadAttachmentsForGrading(
+  ownerId: string,
+  value: unknown,
+): Promise<{ views: HomeworkAttachmentView[]; images: GalleryImage[] }> {
+  const ids = attachmentIds(value);
+  if (ids.length === 0) return { views: [], images: [] };
+  const jobs = await ownJobs(ownerId, ids);
+  const views = orderedViews(ids, await toViews(jobs, { revealHidden: false, sign: false }));
+  const images = jobs.flatMap((job) =>
+    (job.action === "image" || job.action === "image_edit") &&
+    job.status === "done" &&
+    !job.deleted_at &&
+    !job.hidden &&
+    job.storage_path &&
+    mediaKindOfPath(job.storage_path) === "image"
+      ? [{ jobId: job.id, path: job.storage_path, prompt: job.prompt, createdAt: job.created_at }]
+      : [],
+  );
+  return { views, images };
+}
+
+function orderedViews(ids: string[], views: Map<string, HomeworkAttachmentView>): HomeworkAttachmentView[] {
   return ids.map(
     (id) =>
       views.get(id) ?? {
@@ -122,16 +158,6 @@ export async function loadAttachments(
   );
 }
 
-/** Метаданные для промпта проверки: модель видео не смотрит, видит тип, модель, длину и промпт. */
-export function attachmentsForGrading(views: HomeworkAttachmentView[]): AttachmentForGrading[] {
-  return views.map((view) => ({
-    action: view.action,
-    model: view.model,
-    durationSec: view.durationSec,
-    prompt: view.prompt,
-    deleted: view.deleted,
-  }));
-}
 
 /** Свои готовые результаты для выбора «Прикрепить из галереи» (новые первыми, через RLS). */
 export async function listAttachOptions(user: SessionUser): Promise<HomeworkAttachmentView[]> {
