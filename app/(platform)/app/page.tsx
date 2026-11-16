@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowRight, Bot, Clapperboard, Images } from "lucide-react";
+import { ArrowRight, Bot, Clapperboard, Film, Images } from "lucide-react";
 import { hasCourseAccess, requireUser, isStaff } from "@/lib/server/dal/auth";
 import { getStudentHome } from "@/lib/server/dal/student";
 import { listLessons } from "@/lib/server/course";
@@ -19,6 +19,7 @@ const tools = [
   { href: "/app/gallery", title: "Галерея", text: "Все ваши картинки, озвучки и клипы.", icon: Images },
   { href: "/app/bot", title: "Мой бот", text: "Бот с вашим «характером»: веб-чат и Telegram.", icon: Bot },
   { href: "/app/studio", title: "Монтаж", text: "Склейка клипов, реплик и музыки в один ролик.", icon: Clapperboard },
+  { href: "/app/guide", title: "Киношпаргалка", text: "Свет, планы, ракурсы, камера и готовые промпты.", icon: Film },
 ] as const;
 
 export default function StudentHomePage() {
@@ -151,7 +152,7 @@ async function StudentHome() {
         <h2 id="tools-title" className="text-2xl font-bold">
           Инструменты
         </h2>
-        <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {tools.map(({ href, title, text, icon: Icon }) => (
             <li key={href}>
               <Link
