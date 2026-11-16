@@ -147,8 +147,14 @@ export function HomeworkPanel({ lessonId, initial }: { lessonId: string; initial
   }, []);
 
   const submit = useCallback(
-    async (input: SubmitInput) => {
+    async (raw: SubmitInput) => {
       setError(null);
+      // Вкладка «Файл» без файла (или «Ссылка» без ссылки), но с результатами из галереи — это сдача «галерея + комментарий»:
+      // уходит как текст (комментарий становится текстом работы), файл не требуем.
+      const input: SubmitInput =
+        raw.attachments.length > 0 && ((raw.kind === "file" && !raw.file) || (raw.kind === "link" && !raw.link.trim()))
+          ? { ...raw, kind: "text", text: raw.note, note: "" }
+          : raw;
       if (input.text.length > MAX_HOMEWORK_TEXT || input.note.length > MAX_HOMEWORK_NOTE) return setError(homeworkErrorMessages.text_too_long);
       const payload: Record<string, unknown> = {
         lessonId,
@@ -374,6 +380,11 @@ function HomeworkForm({
       )}
 
       <HomeworkGalleryPicker value={attachments} onChange={setAttachments} disabled={busy} />
+      {attachments.length > 0 && kind !== "text" && (
+        <p className={hintClass}>
+          Результаты из галереи прикреплены — {kind === "file" ? "файл" : "ссылку"} можно не добавлять. Идею и объяснение напиши в «Комментарий».
+        </p>
+      )}
 
       {error && (
         <Notice tone="error" className="mt-4">
