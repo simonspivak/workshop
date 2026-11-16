@@ -210,6 +210,15 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
               </h2>
               <p className="mt-1 text-ink-soft">Пользуйся и после курса</p>
             </div>
+            {(lesson.n === 2 || lesson.n === 3) && (
+              <p className="rounded-2xl bg-lavender p-4 leading-relaxed">
+                Свет, планы, ракурсы, движение камеры и готовые фразы для промптов —{" "}
+                <Link href="/app/guide" className="font-semibold text-violet underline-offset-4 hover:underline">
+                  в «Киношпаргалке»
+                </Link>
+                . Её можно распечатать или сохранить в PDF.
+              </p>
+            )}
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {lesson.tools.map((tool, i) => (
                 <li key={i}>

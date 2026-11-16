@@ -142,3 +142,71 @@ li {
     animation: none;
   }
 }
+
+/*
+  Печать «Киношпаргалки» (/app/guide): «Сохранить как PDF» в окне печати даёт чистый документ.
+  Шапка и подвал кабинета уже print:hidden. Своя именованная страница — поля A4 только у шпаргалки.
+*/
+@page guide {
+  size: A4;
+  margin: 16mm 14mm;
+}
+
+@media print {
+  html:has(.guide-doc),
+  html:has(.guide-doc) body {
+    background: #fff !important;
+  }
+
+  .guide-doc {
+    page: guide;
+    max-width: none;
+    padding: 0;
+    font-size: 11pt;
+  }
+
+  .guide-doc,
+  .guide-doc * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .guide-doc .guide-card {
+    border: 1px solid #bbb;
+  }
+
+  .guide-doc .guide-table th,
+  .guide-doc .guide-table td {
+    border: 1px solid #999;
+    padding: 4pt 6pt;
+  }
+
+  .guide-doc .guide-table {
+    min-width: 0;
+  }
+
+  .guide-doc .guide-table-wrap {
+    display: block !important;
+    overflow: visible;
+  }
+
+  .guide-doc .guide-cards {
+    display: none !important;
+  }
+
+  .guide-doc thead {
+    display: table-header-group;
+  }
+
+  .guide-doc tr,
+  .guide-doc .guide-keep {
+    break-inside: avoid;
+  }
+
+  .guide-doc h2,
+  .guide-doc h3,
+  .guide-doc h4 {
+    break-after: avoid;
+  }
+}

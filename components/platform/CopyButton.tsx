@@ -43,10 +43,24 @@ export function useCopy(): { copied: boolean; copy: (text: string) => Promise<vo
   return { copied, copy };
 }
 
-export function CopyButton({ text, label = "Копировать" }: { text: string; label?: string }) {
+export function CopyButton({
+  text,
+  label = "Копировать",
+  ariaLabel,
+}: {
+  text: string;
+  label?: string;
+  /** Имя для экранного чтеца, когда на странице много одинаковых кнопок. Должно начинаться с видимой надписи. */
+  ariaLabel?: string;
+}) {
   const { copied, copy } = useCopy();
   return (
-    <button type="button" className={buttonClass("secondary", "sm")} onClick={() => copy(text)}>
+    <button
+      type="button"
+      className={buttonClass("secondary", "sm")}
+      onClick={() => copy(text)}
+      aria-label={ariaLabel && !copied ? ariaLabel : undefined}
+    >
       {copied ? <Check aria-hidden="true" className="size-4" /> : <Copy aria-hidden="true" className="size-4" />}
       {copied ? "Скопировано" : label}
     </button>
