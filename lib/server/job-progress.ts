@@ -18,7 +18,7 @@ import { beginJobStoring, claimJobPoll, completeJob, mediaPath } from "@/lib/ser
 import { mediaKindOfPath } from "@/lib/server/media-refs";
 import { signMediaPaths, uploadMedia } from "@/lib/server/storage";
 import { createAdminClient } from "@/lib/server/supabase/admin";
-import type { Database } from "@/lib/server/supabase/types";
+import type { Database, Json } from "@/lib/server/supabase/types";
 import { refundJob } from "@/lib/server/wallet";
 import type { JobView, MediaFile } from "@/lib/platform/generation-types";
 import { gatewayPollIntervalSec, isGatewayCheckDue } from "@/lib/platform/job-poll";
@@ -28,6 +28,8 @@ import { gatewayPollIntervalSec, isGatewayCheckDue } from "@/lib/platform/job-po
   job-rules.ts спрашивает шлюз (не чаще, чем разрешает gatewayPollIntervalSec для действия и
   возраста задачи; раньше — ответ из базы без запуска n8n), копирует готовый файл
   в Storage или возвращает звёзды. Копирование идёт в after(): ответ опроса не ждёт скачивания.
+  Тот же advanceJob зовёт POST /api/jobs/callback, когда kie сообщает о конце задачи
+  (trigger: "callback", lib/server/job-callback.ts): шлюз спрашивается сразу, без расписания.
 */
 
 type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
@@ -35,7 +37,7 @@ type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
 export const JOB_COLUMNS =
   "id, user_id, group_id, action, model, status, stars, prompt, result_text, storage_path, extra_paths, " +
   "mime_type, error, hidden, deleted_at, gateway_task_id, lesson_id, task_ref, created_at, updated_at, submitted_at, completed_at, " +
-  "last_polled_at";
+  "last_polled_at, callback:params->callback";
 
 export type JobRecord = Pick<
   JobRow,
@@ -62,7 +64,10 @@ export type JobRecord = Pick<
   | "submitted_at"
   | "completed_at"
   | "last_polled_at"
->;
+> & {
+  /** jobs.params.callback: при создании шлюзу отдан адрес обратного вызова (lib/server/job-callback.ts) */
+  callback?: Json | null;
+};
 
 export async function loadJob(jobId: string): Promise<JobRecord | null> {
   if (!isUuid(jobId)) return null;
@@ -122,7 +127,16 @@ export type AdvanceOptions = {
    * после часа). По умолчанию — JOB_REQUEST_BUDGET_MS от вызова; маршрут передаёт срок от начала запроса.
    */
   deadline?: number;
+  /**
+   * "callback" — kie сообщил, что задача закончилась (POST /api/jobs/callback): шлюз спрашиваем
+   * сразу, без расписания опроса; остаётся только замок claim_job_poll с паузой
+   * CALLBACK_MIN_INTERVAL_SEC, чтобы одновременный опрос не спросил шлюз второй раз.
+   */
+  trigger?: "poll" | "callback";
 };
+
+/** Обратный вызов не спрашивает шлюз чаще, чем раз в столько секунд на задачу (и после чужой проверки). */
+export const CALLBACK_MIN_INTERVAL_SEC = 2;
 
 /**
  * Продвинуть задачу на шаг, если пора: опрос шлюза, копирование результата, возврат звёзд
@@ -142,9 +156,15 @@ export async function advanceJob(job: JobRecord, options: AdvanceOptions = {}): 
 
     case "submitted": {
       if (!job.gateway_task_id) return refundAndReload(job, refundReason("gateway_lost", "no task id"));
-      // Последняя проверка у шлюза была недавно — отвечаем из базы, запуск n8n не тратим
-      const interval = gatewayPollIntervalSec(job.action, now - Date.parse(job.submitted_at ?? job.created_at));
-      if (!isGatewayCheckDue(job.last_polled_at, interval, now)) return job;
+      const byCallback = options.trigger === "callback";
+      // Последняя проверка у шлюза была недавно — отвечаем из базы, запуск n8n не тратим.
+      // У задачи с обратным вызовом расписание реже: о готовности обычно сообщает kie.
+      const interval = byCallback
+        ? CALLBACK_MIN_INTERVAL_SEC
+        : gatewayPollIntervalSec(job.action, now - Date.parse(job.submitted_at ?? job.created_at), {
+            callback: job.callback === true,
+          });
+      if (!byCallback && !isGatewayCheckDue(job.last_polled_at, interval, now)) return job;
       if (!(await claimJobPoll(job.id, interval))) return job;
       const decision = decideFromGatewayStatus(timing, await getTaskStatus(job.gateway_task_id), now);
       return applyDecision(job, decision, { deadline });
