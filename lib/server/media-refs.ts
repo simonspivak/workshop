@@ -8,7 +8,13 @@ import type { MediaKind } from "@/lib/platform/generation-types";
   Модуль без ввода-вывода; доступ к задаче проверяет lib/server/storage.ts.
 */
 
-const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+/**
+ * Потолок одного файла в бакете media: file_size_limit = 52428800 (50 МиБ) в supabase/config.toml
+ * и в миграции init. Больше Storage не примет — такой результат шлюза не качаем (gateway.ts MAX_RESULT_BYTES).
+ */
+export const MEDIA_FILE_MAX_BYTES = 50 * 1024 * 1024;
+
+const UUID ="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const EXT = "jpg|png|webp|mp4|mp3|wav|m4a";
 
 const JOB_MEDIA_PATH_RE = new RegExp(`^(${UUID})/(${UUID})(?:-([2-9]|1[0-9]))?\\.(${EXT})$`);

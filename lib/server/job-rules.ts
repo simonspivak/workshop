@@ -67,6 +67,8 @@ export const JOB_ERROR_CODES = [
   "gateway_unavailable",
   "gateway_rejected",
   "result_unavailable",
+  // результат больше лимита бакета media (50 МБ): не скачиваем и не храним, звёзды — сразу
+  "result_too_large",
 ] as const;
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
