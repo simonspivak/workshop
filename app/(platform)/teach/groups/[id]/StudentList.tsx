@@ -13,7 +13,14 @@ import { FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
 import { Badge, Notice, Stars, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { UnlockLoginButton } from "./UnlockLoginButton";
-import { ageBandLabels, type ActionResult, type AgeBand } from "@/lib/platform/messages";
+import { DeleteDataForm } from "./DeleteDataForm";
+import {
+  ageBandLabels,
+  consentMethodLabels,
+  type ActionResult,
+  type AgeBand,
+  type ConsentMethod,
+} from "@/lib/platform/messages";
 import {
   countStudents,
   filterStudents,
@@ -28,6 +35,10 @@ export type StudentItem = {
   nickname: string;
   ageBand: AgeBand;
   consent: boolean;
+  /** когда отмечено согласие (ISO), как получено и кто отметил (ник) — аудит № 25 */
+  consentAt: string | null;
+  consentMethod: ConsentMethod | null;
+  consentBy: string | null;
   disabled: boolean;
   balance: number;
 };
@@ -43,7 +54,16 @@ const sortLabels: Record<StudentSort, string> = {
  * Порядок и фильтр — в браузере; строки держат ключ id, поэтому обновление страницы
  * не закрывает раскрытого ученика и не стирает набранное в формах.
  */
-export function StudentList({ students, lowThreshold }: { students: StudentItem[]; lowThreshold: number }) {
+export function StudentList({
+  students,
+  lowThreshold,
+  canDelete = false,
+}: {
+  students: StudentItem[];
+  lowThreshold: number;
+  /** админ: в карточке ученика есть «Удалить данные ученика» */
+  canDelete?: boolean;
+}) {
   const [sort, setSort] = useState<StudentSort>("balance");
   const [filter, setFilter] = useState<StudentFilter>("all");
 
@@ -98,7 +118,7 @@ export function StudentList({ students, lowThreshold }: { students: StudentItem[
       ) : (
         <ul className="mt-2 divide-y divide-ink/10">
           {visible.map((student) => (
-            <StudentRow key={student.id} student={student} lowThreshold={lowThreshold} />
+            <StudentRow key={student.id} student={student} lowThreshold={lowThreshold} canDelete={canDelete} />
           ))}
         </ul>
       )}
@@ -106,7 +126,15 @@ export function StudentList({ students, lowThreshold }: { students: StudentItem[
   );
 }
 
-function StudentRow({ student, lowThreshold }: { student: StudentItem; lowThreshold: number }) {
+function StudentRow({
+  student,
+  lowThreshold,
+  canDelete,
+}: {
+  student: StudentItem;
+  lowThreshold: number;
+  canDelete: boolean;
+}) {
   const low = !student.disabled && student.balance < lowThreshold;
   return (
     <li className={`py-3 ${student.disabled ? "opacity-70" : ""}`}>
@@ -137,6 +165,7 @@ function StudentRow({ student, lowThreshold }: { student: StudentItem; lowThresh
           </div>
           <DisableForm student={student} />
         </div>
+        {canDelete && <DeleteDataForm studentId={student.id} confirmText={student.login ?? student.nickname} />}
       </details>
     </li>
   );
@@ -213,6 +242,24 @@ function AgeForm({ student }: { student: StudentItem }) {
         <input type="checkbox" name="consent" defaultChecked={student.consent} className="mt-1 size-5 accent-violet" />
         <span>Согласие родителей получено</span>
       </label>
+      <div>
+        <label htmlFor={`consent-method-${student.id}`} className={labelClass}>
+          Как получено
+        </label>
+        <select
+          id={`consent-method-${student.id}`}
+          name="consentMethod"
+          defaultValue={student.consentMethod ?? "paper_centre"}
+          className={`${inputClass} mt-2`}
+        >
+          {Object.entries(consentMethodLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <p className={hintClass}>{consentRecord(student)}</p>
+      </div>
       <FormError state={state} />
       {state?.ok && <Notice tone="success">Сохранено.</Notice>}
       <SubmitButton size="sm" variant="secondary">
@@ -220,6 +267,22 @@ function AgeForm({ student }: { student: StudentItem }) {
       </SubmitButton>
     </form>
   );
+}
+
+const dayFormat = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "Europe/Berlin",
+});
+
+/** «Отмечено 5 ноября 2026 · письменное согласие родителей у центра · отметил Сеня». */
+function consentRecord(student: StudentItem): string {
+  if (!student.consentAt) return "Согласие не отмечено. Документы хранит центр, на платформу их не загружаем.";
+  const parts = [`Отмечено ${dayFormat.format(new Date(student.consentAt))}`];
+  parts.push(student.consentMethod ? consentMethodLabels[student.consentMethod].toLowerCase() : "как — не указано");
+  parts.push(student.consentBy ? `отметил(а) ${student.consentBy}` : "кто — не записано");
+  return parts.join(" · ");
 }
 
 function ResetForm({ studentId }: { studentId: string }) {

@@ -13,6 +13,7 @@ export type PriceAccess = "all" | "adult" | "google" | "adult_or_16_consent" | "
 export type GroupKind = "teens" | "adults" | "corporate" | "individual" | "demo";
 export type LedgerReason = "welcome" | "grant" | "adjust" | "debit" | "refund" | "quiz_bonus" | "bot_reply";
 export type BotChannel = "web" | "telegram";
+export type ConsentMethod = "paper_centre" | "electronic_centre";
 
 type Timestamps = { created_at: string; updated_at: string };
 
@@ -24,6 +25,10 @@ type ProfileRow = Timestamps & {
   group_id: string | null;
   age_band: AgeBand;
   parental_consent_at: string | null;
+  /** как получено согласие родителей (20261116190000_privacy); документов и данных родителей не храним */
+  parental_consent_method: ConsentMethod | null;
+  /** кто отметил согласие (ведущий или админ) */
+  parental_consent_by: string | null;
   disabled: boolean;
   created_by: string | null;
 };
@@ -382,6 +387,23 @@ export type Database = {
         Returns: { user_id: string; lesson_id: string; steps: number }[];
       };
       set_student_disabled: { Args: { p_actor: string; p_user: string; p_disabled: boolean }; Returns: boolean };
+      // 20261116190000_privacy: удаление ученика админом и сроки хранения гостевых данных ботов
+      delete_student_data: {
+        Args: { p_actor: string; p_user: string; p_files?: number };
+        Returns: {
+          group_id: string | null;
+          jobs: number;
+          homework: number;
+          bot_messages: number;
+          bot_leads: number;
+          ledger: number;
+          auth_deleted: boolean;
+        }[];
+      };
+      sweep_bot_guest_data: {
+        Args: { p_message_days?: number; p_lead_days?: number; p_limit?: number };
+        Returns: { messages: number; leads: number }[];
+      };
       grant_stars_group: {
         Args: {
           p_actor: string;

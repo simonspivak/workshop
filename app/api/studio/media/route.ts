@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { authorize } from "@/lib/server/dal/auth";
+import { authorizeCourse } from "@/lib/server/dal/auth";
 import { json, listStudioMedia, studioFailure } from "@/lib/server/studio";
 
 // Медиа для студии монтажа: свои готовые клипы, картинки, озвучки и музыка
@@ -8,7 +8,7 @@ export async function GET() {
   // только по запросу: ответ зависит от пользователя, при сборке не пререндерим
   await connection();
   try {
-    const user = await authorize();
+    const user = await authorizeCourse();
     return json(await listStudioMedia(user));
   } catch (error) {
     return studioFailure(error, "media");

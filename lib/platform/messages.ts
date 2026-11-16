@@ -11,6 +11,14 @@ export const ageBandLabels: Record<AgeBand, string> = {
   adult: "18+",
 };
 
+/** Как получено согласие родителей (profiles.parental_consent_method). Документы хранит центр, не платформа. */
+export type ConsentMethod = "paper_centre" | "electronic_centre";
+
+export const consentMethodLabels: Record<ConsentMethod, string> = {
+  paper_centre: "Письменное согласие родителей у центра",
+  electronic_centre: "Электронное согласие родителей у центра",
+};
+
 export const roleLabels: Record<AppRole, string> = {
   admin: "Админ",
   teacher: "Ведущий",
@@ -72,6 +80,12 @@ export const errorMessages = {
   // учитель
   group_code_taken: "Такой код группы уже занят.",
   too_many_students: "За один раз — не больше 60 учеников. Добавьте остальных следующей пачкой.",
+  // ученик без группы (аккаунт создан не ведущим или группу удалили)
+  no_group: "Аккаунт не привязан к группе. Обратитесь к ведущему.",
+  // удаление данных ученика (админ)
+  delete_confirm: "Впишите логин ученика точно как в списке.",
+  delete_files_failed: "Не все файлы удалось удалить. Данные ученика не тронуты — попробуйте ещё раз.",
+  delete_login_failed: "Данные удалены, но учётную запись входа удалить не удалось. Удалите её в Supabase → Authentication.",
 } as const;
 
 export type ErrorCode = keyof typeof errorMessages;

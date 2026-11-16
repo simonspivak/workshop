@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { AuthError, authorize } from "@/lib/server/dal/auth";
+import { AuthError, authorizeCourse } from "@/lib/server/dal/auth";
 import { ConfigError } from "@/lib/server/env";
 import { generateRequestSchema, isSameOriginRequest, startGeneration } from "@/lib/server/generate";
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const user = await authorize();
+    const user = await authorizeCourse();
 
     const raw = await request.text();
     if (raw.length > MAX_BODY_CHARS) return json({ error: "invalid_input" }, 413);

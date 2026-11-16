@@ -23,7 +23,7 @@ import {
 import { deleteWebhook, getMe, setWebhook, TELEGRAM_TOKEN_RE } from "@/lib/server/bot/telegram";
 import { checkToolsForOwner, leadFormSchema, type BotTools, type LeadForm } from "@/lib/server/bot/tools";
 import { decryptSecret, encryptSecret, randomSecret, sha256Hex } from "@/lib/server/crypto";
-import { authorize, type SessionUser } from "@/lib/server/dal/auth";
+import { authorize, authorizeCourse, type SessionUser } from "@/lib/server/dal/auth";
 import { appUrl } from "@/lib/server/env";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import type { Json } from "@/lib/server/supabase/types";
@@ -79,7 +79,8 @@ const createSchema = z.object({ name: z.string().trim().min(1, "Назовите
 
 export async function createBot(_prev: BotActionResult | null, formData: FormData): Promise<BotActionResult> {
   try {
-    const user = await authorize();
+    // ученик без группы бота не создаёт и адрес не занимает (аудит № 58)
+    const user = await authorizeCourse();
     const parsed = createSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return invalid(parsed.error);
     if (await myBot(user)) {

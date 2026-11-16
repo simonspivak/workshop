@@ -42,6 +42,9 @@ function overTeacherStarsLimit(role: string, starsPerStudent: number) {
 
 const groupKinds = ["teens", "adults", "corporate", "individual", "demo"] as const;
 const ageBands = ["u16", "16_17", "adult"] as const;
+// как получено согласие родителей (аудит № 25): только способ, без документов и данных родителей
+const consentMethods = ["paper_centre", "electronic_centre"] as const;
+const consentMethod = z.preprocess((v) => (v === "" ? undefined : v), z.enum(consentMethods).optional());
 
 const checkbox = z.preprocess((v) => v === "on" || v === "true" || v === "1", z.boolean());
 const optionalDate = z.preprocess(
@@ -194,12 +197,15 @@ export async function setGroupPaused(_prev: ActionResult | null, formData: FormD
 export type CreatedStudent = { nickname: string; login: string; password: string };
 export type CreateStudentsResult = ActionResult<{ created: CreatedStudent[]; failed: string[] }>;
 
-const createStudentsSchema = z.object({
-  groupId: uuid,
-  nicknames: z.string().max(4000),
-  ageBand: z.enum(ageBands),
-  consent: checkbox,
-});
+const createStudentsSchema = z
+  .object({
+    groupId: uuid,
+    nicknames: z.string().max(4000),
+    ageBand: z.enum(ageBands),
+    consent: checkbox,
+    consentMethod,
+  })
+  .refine((v) => !v.consent || v.consentMethod, { path: ["consentMethod"] });
 
 function parseNicknames(raw: string): string[] {
   const seen = new Set<string>();
@@ -278,10 +284,14 @@ export async function createStudents(_prev: CreateStudentsResult | null, formDat
       });
     }
 
-    if (input.consent && created.length) {
+    if (input.consent && input.consentMethod && created.length) {
       const { error } = await admin
         .from("profiles")
-        .update({ parental_consent_at: new Date().toISOString() })
+        .update({
+          parental_consent_at: new Date().toISOString(),
+          parental_consent_method: input.consentMethod,
+          parental_consent_by: user.id,
+        })
         .in(
           "id",
           created.map((s) => s.id),
@@ -298,6 +308,7 @@ export async function createStudents(_prev: CreateStudentsResult | null, formDat
         failed: failed.length,
         ageBand: input.ageBand,
         consent: input.consent,
+        consentMethod: input.consent ? (input.consentMethod ?? null) : null,
         logins: created.map((s) => s.login),
       },
     });
@@ -341,9 +352,15 @@ export async function resetStudentPassword(
   }
 }
 
-const ageSchema = z.object({ studentId: uuid, ageBand: z.enum(ageBands), consent: checkbox });
+const ageSchema = z
+  .object({ studentId: uuid, ageBand: z.enum(ageBands), consent: checkbox, consentMethod })
+  .refine((v) => !v.consent || v.consentMethod, { path: ["consentMethod"] });
 
-/** Возраст и отметка «согласие родителей получено». */
+/**
+ * Возраст и отметка «согласие родителей получено»: дата, как получено, кто отметил (аудит № 25).
+ * Дата — первой отметки; «кто» меняется, когда согласие отмечено заново или изменён способ.
+ * В журнал — «было → стало», без документов и данных родителей.
+ */
 export async function updateStudentAge(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   try {
     const user = await authorize(STAFF_ROLES);
@@ -351,10 +368,20 @@ export async function updateStudentAge(_prev: ActionResult | null, formData: For
     if (!parsed.success) return invalid(parsed.error);
     const { student, group } = await assertTeachesStudent(user, parsed.data.studentId);
 
-    const consentAt = parsed.data.consent ? (student.consentAt ?? new Date().toISOString()) : null;
+    const method = parsed.data.consent ? (parsed.data.consentMethod ?? null) : null;
+    const same = parsed.data.consent && student.consentAt !== null && student.consentMethod === method;
+    const consent = !parsed.data.consent
+      ? { parental_consent_at: null, parental_consent_method: null, parental_consent_by: null }
+      : same
+        ? {}
+        : {
+            parental_consent_at: student.consentAt ?? new Date().toISOString(),
+            parental_consent_method: method,
+            parental_consent_by: user.id,
+          };
     const { error } = await createAdminClient()
       .from("profiles")
-      .update({ age_band: parsed.data.ageBand, parental_consent_at: consentAt })
+      .update({ age_band: parsed.data.ageBand, ...consent })
       .eq("id", student.id);
     if (error) throw new Error(`update age failed (${error.code})`);
 
@@ -363,7 +390,10 @@ export async function updateStudentAge(_prev: ActionResult | null, formData: For
       action: "student.age_update",
       targetUser: student.id,
       targetGroup: group.id,
-      meta: { ageBand: parsed.data.ageBand, consent: parsed.data.consent },
+      meta: {
+        from: { ageBand: student.ageBand, consent: student.consentAt !== null, consentMethod: student.consentMethod },
+        to: { ageBand: parsed.data.ageBand, consent: parsed.data.consent, consentMethod: method },
+      },
     });
     refresh();
     return { ok: true };

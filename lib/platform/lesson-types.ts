@@ -59,5 +59,10 @@ export type QuizResultView = {
   alreadyDone: boolean;
   /** демо ведущего: результат не записан */
   practice: boolean;
+  /**
+   * Ключ теста поменяли после попытки (аудит № 55): балл — засчитанный тогда, разбор по новым
+   * вопросам не показываем (items пустой), иначе отметки противоречат баллу.
+   */
+  keyChanged?: boolean;
   items: { chosen: number; correctIndex: number; correct: boolean; explanation: string }[];
 };

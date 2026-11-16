@@ -169,12 +169,16 @@ async function Group({ params }: { params: Promise<{ id: string }> }) {
         </div>
         <StudentList
           lowThreshold={lowThreshold}
+          canDelete={user.role === "admin"}
           students={students.map((s) => ({
             id: s.id,
             login: s.login,
             nickname: s.nickname,
             ageBand: s.ageBand,
             consent: s.consentAt !== null,
+            consentAt: s.consentAt,
+            consentMethod: s.consentMethod,
+            consentBy: s.consentBy,
             disabled: s.disabled,
             balance: s.balance,
           }))}

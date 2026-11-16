@@ -188,8 +188,9 @@ function candidates(row: JobListRow, own: boolean): Candidate[] {
 export async function listStudioMedia(user: SessionUser): Promise<StudioMediaResponse> {
   const supabase = await createClient();
   const columns = "id, user_id, action, params, prompt, storage_path, extra_paths, mime_type, created_at";
-  const ready = () =>
-    supabase
+  // свои — клиентом пользователя (RLS), общая галерея — admin-клиентом с явными фильтрами (аудит № 57)
+  const ready = (client: Pick<typeof supabase, "from"> = supabase) =>
+    client
       .from("jobs")
       .select(columns)
       .eq("status", "done")
@@ -205,9 +206,9 @@ export async function listStudioMedia(user: SessionUser): Promise<StudioMediaRes
       .order("created_at", { ascending: false })
       .limit(LIST_LIMIT)
       .returns<JobListRow[]>(),
-    // общая галерея: RLS (jobs_read) и так пускает только при share_gallery, фильтр — для ясности
+    // общая галерея: только своя группа из сессии и только если ведущий её открыл
     shareGallery && user.group
-      ? ready()
+      ? ready(createAdminClient())
           .eq("group_id", user.group.id)
           .neq("user_id", user.id)
           .order("created_at", { ascending: false })

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { requireUser } from "@/lib/server/dal/auth";
+import { requireCourseUser } from "@/lib/server/dal/auth";
 import { Container, PageTitle } from "@/components/platform/ui";
 import { StudioEditor, StudioSkeleton } from "@/components/platform/StudioEditor";
 
@@ -25,7 +25,7 @@ export default function StudioPage({ searchParams }: PageProps<"/app/studio">) {
 }
 
 async function Studio({ searchParams }: { searchParams: PageProps<"/app/studio">["searchParams"] }) {
-  const user = await requireUser();
+  const user = await requireCourseUser();
   const params = await searchParams;
   const lesson = typeof params.lesson === "string" && LESSON_RE.test(params.lesson) ? params.lesson : null;
   const task = typeof params.task === "string" && TASK_RE.test(params.task) ? params.task : null;

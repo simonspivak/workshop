@@ -87,8 +87,9 @@ reset role;
 update public.groups set share_gallery = true where id = 'b0000000-0000-4000-8000-000000000001';
 set local role authenticated;
 set local request.jwt.claims to '{"sub": "c0000000-0000-4000-8000-00000000000a", "role": "authenticated"}';
-select is((select count(*)::int from public.jobs), 2,
-  'с общей галереей видны готовые нескрытые работы одногруппников');
+-- с 20261116190000_privacy общую галерею отдаёт сервер (admin-клиентом), RLS — только свои строки
+select is((select count(*)::int from public.jobs), 1,
+  'общая галерея не открывает через Data API строки одногруппников');
 select is((select count(*)::int from public.jobs where user_id = 'c0000000-0000-4000-8000-00000000000c'), 0,
   'работы другой группы не видны');
 select is((select count(*)::int from public.profiles), 1, 'общая галерея не открывает профили одногруппников');

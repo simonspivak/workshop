@@ -11,7 +11,7 @@ import { RichText } from "@/components/platform/RichText";
 import { HomeworkPanel } from "@/components/platform/HomeworkPanel";
 import { Badge, Card, Container, Notice, PageTitle, Skeleton } from "@/components/platform/ui";
 import { getLessonByNumber, getLessonStaffNotes, lessonProgressSteps, listLessons } from "@/lib/server/course";
-import { isStaff, requireUser } from "@/lib/server/dal/auth";
+import { isStaff, requireCourseUser } from "@/lib/server/dal/auth";
 import { listMotionLibrary, listReferenceOptions } from "@/lib/server/gallery";
 import { describeLessonActions } from "@/lib/server/generate-options";
 import { getLessonHomework } from "@/lib/server/homework/submissions";
@@ -48,7 +48,7 @@ export default async function LessonPage({ params }: PageProps<"/app/lessons/[n]
 }
 
 async function Lesson({ lesson }: { lesson: LessonView }) {
-  const user = await requireUser();
+  const user = await requireCourseUser();
   const staff = isStaff(user);
   const usesMotion = lesson.tasks.some((task) => task.aiActions.some((a) => a.type === "motion"));
   const library = usesMotion ? await listMotionLibrary() : [];

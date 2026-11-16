@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowRight, Bot, Clapperboard, Images } from "lucide-react";
-import { requireUser, isStaff } from "@/lib/server/dal/auth";
+import { hasCourseAccess, requireUser, isStaff } from "@/lib/server/dal/auth";
 import { getStudentHome } from "@/lib/server/dal/student";
 import { listLessons } from "@/lib/server/course";
 import { listMyOpenJobs } from "@/lib/server/gallery";
@@ -39,6 +39,8 @@ async function StudentHome() {
     listMyOpenJobs(user),
   ]);
   const staff = isStaff(user);
+  // ученик без группы курс не видит (аудит № 58): уроки, студия и генерации ведут обратно сюда
+  const course = hasCourseAccess(user);
 
   return (
     <>
@@ -50,6 +52,11 @@ async function StudentHome() {
           <Link href="/teach" className="font-semibold text-violet underline underline-offset-4">
             Перейти к группам
           </Link>
+        </Notice>
+      )}
+      {!course && (
+        <Notice tone="warn" className="mb-6">
+          Аккаунт не привязан к группе: уроки и генерации недоступны. Обратитесь к ведущему.
         </Notice>
       )}
       {user.group?.paused && (
@@ -115,28 +122,30 @@ async function StudentHome() {
         </section>
       )}
 
-      <section aria-labelledby="lessons-title" className="mt-10">
-        <h2 id="lessons-title" className="text-2xl font-bold">
-          Уроки
-        </h2>
-        <ol className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {lessons.map((lesson) => (
-            <li key={lesson.id}>
-              <Link
-                href={`/app/lessons/${lesson.n}`}
-                className="group flex h-full flex-col rounded-3xl bg-white p-5 ring-1 ring-ink/10 transition-colors hover:ring-violet sm:p-6"
-              >
-                <span className="font-mono text-xs text-ink-soft">Урок {lesson.n}</span>
-                <span className="mt-2 font-display text-lg leading-snug font-semibold">{lesson.title}</span>
-                {lesson.oneLiner && <span className="mt-2 text-ink-soft">{lesson.oneLiner}</span>}
-                <span className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-semibold text-violet">
-                  Открыть <ArrowRight aria-hidden="true" className="size-4 transition-transform group-hover:translate-x-0.5" />
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {course && (
+        <section aria-labelledby="lessons-title" className="mt-10">
+          <h2 id="lessons-title" className="text-2xl font-bold">
+            Уроки
+          </h2>
+          <ol className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {lessons.map((lesson) => (
+              <li key={lesson.id}>
+                <Link
+                  href={`/app/lessons/${lesson.n}`}
+                  className="group flex h-full flex-col rounded-3xl bg-white p-5 ring-1 ring-ink/10 transition-colors hover:ring-violet sm:p-6"
+                >
+                  <span className="font-mono text-xs text-ink-soft">Урок {lesson.n}</span>
+                  <span className="mt-2 font-display text-lg leading-snug font-semibold">{lesson.title}</span>
+                  {lesson.oneLiner && <span className="mt-2 text-ink-soft">{lesson.oneLiner}</span>}
+                  <span className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-semibold text-violet">
+                    Открыть <ArrowRight aria-hidden="true" className="size-4 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <section aria-labelledby="tools-title" className="mt-10">
         <h2 id="tools-title" className="text-2xl font-bold">
