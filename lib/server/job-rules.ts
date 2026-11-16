@@ -10,7 +10,7 @@ import type { JobAction, JobStatus } from "@/lib/server/supabase/types";
 
 const MINUTE = 60_000;
 
-export const GATEWAY_POLL_INTERVAL_SEC = 5;
+// Как часто спрашивать шлюз о статусе — lib/platform/job-poll.ts (gatewayPollIntervalSec)
 export const QUEUED_WITHOUT_TASK_LIMIT_MS = 3 * MINUTE;
 export const STORING_RECLAIM_AFTER_MS = 3 * MINUTE; // как в SQL begin_job_storing
 export const SUBMITTED_HARD_LIMIT_MS = 60 * MINUTE;

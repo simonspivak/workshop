@@ -1,11 +1,12 @@
 "use client";
 
 import { RichText } from "@/components/platform/RichText";
-import { useState, type ReactNode } from "react";
-import { Check, Copy, EyeOff, LoaderCircle, TriangleAlert } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Check, Copy, EyeOff, LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
 import { DeleteJobButton, canDeleteJob } from "@/components/platform/DeleteJobButton";
-import { useLiveJob } from "@/components/platform/GenerateClient";
-import { Badge, Stars } from "@/components/platform/ui";
+import { useLiveJob, type LiveJob, type LivePollStop } from "@/components/platform/GenerateClient";
+import { Badge, Stars, buttonClass } from "@/components/platform/ui";
+import { UNCERTAIN_AFTER_MS } from "@/lib/platform/job-poll";
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import {
   isActiveJobStatus,
@@ -85,12 +86,24 @@ function TextResult({ text }: { text: string }) {
   );
 }
 
-export function JobStatusLine({ job }: { job: JobView }) {
+/** live — состояние опроса из useLiveJob: если опрос остановился, вместо спиннера кнопка «Обновить». */
+export function JobStatusLine({ job, live }: { job: JobView; live?: Pick<LiveJob, "stopped" | "refresh"> }) {
+  const uncertain = useAgeOver(job.status === "queued" ? job.createdAt : null, UNCERTAIN_AFTER_MS);
+  if (isActiveJobStatus(job.status) && live?.stopped) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm text-ink-soft" role="status">
+        <span>{stoppedText[live.stopped]}</span>
+        <button type="button" onClick={live.refresh} className={buttonClass("secondary", "sm")}>
+          <RefreshCw aria-hidden="true" className="size-4" /> Обновить
+        </button>
+      </div>
+    );
+  }
   if (isActiveJobStatus(job.status)) {
     return (
       <p className="flex items-center gap-2 text-sm text-ink-soft" role="status">
         <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
-        {job.status === "storing" ? "Сохраняем в галерею…" : slowHint(job)}
+        {job.status === "storing" ? "Сохраняем в галерею…" : uncertain ? UNCERTAIN_TEXT : slowHint(job)}
       </p>
     );
   }
@@ -103,6 +116,27 @@ export function JobStatusLine({ job }: { job: JobView }) {
     );
   }
   return null;
+}
+
+// queued без ответа шлюза: задача, возможно, не создана; правило «queued старше 3 минут» вернёт звёзды
+const UNCERTAIN_TEXT = "Сервис генерации пока не подтвердил задачу. Ждём до 3 минут; если ответа не будет, звёзды вернутся сами.";
+
+const stoppedText: Record<LivePollStop, string> = {
+  ceiling: "Генерация идёт дольше обычного. Нажмите «Обновить», чтобы проверить ещё раз.",
+  session: "Сессия закончилась. Обновите страницу, чтобы узнать, готово ли.",
+  gone: "Задача не найдена. Обновите страницу.",
+};
+
+/** true, когда с момента since прошло больше ms. На сервере и при первой отрисовке — false (без расхождения гидратации). */
+function useAgeOver(since: string | null, ms: number): boolean {
+  const [over, setOver] = useState<{ since: string; value: boolean } | null>(null);
+  useEffect(() => {
+    if (!since) return;
+    const left = Date.parse(since) + ms - Date.now();
+    const timer = setTimeout(() => setOver({ since, value: true }), Math.max(0, left));
+    return () => clearTimeout(timer);
+  }, [since, ms]);
+  return Boolean(since && over?.since === since && over.value);
 }
 
 function slowHint(job: JobView): string {
@@ -140,7 +174,8 @@ export function GenerateJobCard({
   onSettled?: (job: JobView) => void;
   onDeleted?: (jobId: string) => void;
 }) {
-  const job = useLiveJob(initial, onSettled);
+  const live = useLiveJob(initial, onSettled);
+  const job = live.job;
   return (
     <article className="space-y-3 rounded-3xl bg-white p-4 ring-1 ring-ink/10">
       <JobMeta job={job} />
@@ -155,7 +190,7 @@ export function GenerateJobCard({
           <p className="mt-1 break-words whitespace-pre-wrap">{job.prompt}</p>
         </details>
       )}
-      <JobStatusLine job={job} />
+      <JobStatusLine job={job} live={live} />
       <JobMedia job={job} />
       {onDeleted && canDeleteJob(job) && (
         <div className="flex justify-end">

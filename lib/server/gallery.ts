@@ -14,6 +14,7 @@ import {
   jobActionLabels,
   type GalleryItem,
   type JobAction,
+  type JobView,
   type MediaKind,
   type MediaOption,
 } from "@/lib/platform/generation-types";
@@ -71,6 +72,32 @@ export async function listMyGallery(user: SessionUser, query: GalleryQuery = {})
     page,
     hasMore: rows.length > GALLERY_PAGE_SIZE,
   };
+}
+
+/** Сколько незавершённых задач показывает кабинет (столько же create_job разрешает держать открытыми). */
+export const OPEN_JOBS_LIMIT = 5;
+
+/**
+ * Свои незавершённые задачи (любые, кроме монтажа), самые старые первыми — для блока
+ * «Генерации в работе» в кабинете. Cron нет: задачу продвигает только опрос, поэтому брошенные
+ * (вкладку закрыли до результата) доводит до конца карточка в кабинете при следующем входе —
+ * готовое копируется в галерею, за неудачное или зависшее возвращаются звёзды.
+ * Индекс jobs_open_idx (user_id, частичный по статусу).
+ */
+export async function listMyOpenJobs(user: SessionUser): Promise<JobView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("jobs")
+    .select(JOB_COLUMNS)
+    .eq("user_id", user.id)
+    .in("status", ["queued", "submitted", "storing"])
+    .neq("action", "montage")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(OPEN_JOBS_LIMIT)
+    .returns<JobRecord[]>();
+  if (error) throw new Error(`gallery.listMyOpenJobs failed (${error.code})`);
+  return toJobViews(data ?? []);
 }
 
 /** Общая галерея группы для ученика — только если ведущий её включил. null — выключена. */

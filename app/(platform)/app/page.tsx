@@ -5,7 +5,9 @@ import { ArrowRight, Bot, Clapperboard, Images } from "lucide-react";
 import { requireUser, isStaff } from "@/lib/server/dal/auth";
 import { getStudentHome } from "@/lib/server/dal/student";
 import { listLessons } from "@/lib/server/course";
+import { listMyOpenJobs } from "@/lib/server/gallery";
 import { ledgerReasonLabels } from "@/lib/platform/messages";
+import { GenerateJobCard } from "@/components/platform/GenerateJobCard";
 import { Card, Container, Notice, PageTitle, Skeleton, Stars } from "@/components/platform/ui";
 
 export const metadata: Metadata = {
@@ -30,7 +32,11 @@ export default function StudentHomePage() {
 
 async function StudentHome() {
   const user = await requireUser();
-  const [home, lessons] = await Promise.all([getStudentHome(user), Promise.resolve(listLessons())]);
+  const [home, lessons, openJobs] = await Promise.all([
+    getStudentHome(user),
+    Promise.resolve(listLessons()),
+    listMyOpenJobs(user),
+  ]);
   const staff = isStaff(user);
 
   return (
@@ -88,6 +94,25 @@ async function StudentHome() {
           )}
         </Card>
       </div>
+
+      {openJobs.length > 0 && (
+        <section aria-labelledby="open-jobs-title" className="mt-10">
+          <h2 id="open-jobs-title" className="text-2xl font-bold">
+            Генерации в работе
+          </h2>
+          <p className="mt-2 text-ink-soft">
+            Эти задачи ещё не закончились. Страница сама их проверит: готовое попадёт в галерею, а за неудачное звёзды
+            вернутся.
+          </p>
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {openJobs.map((job) => (
+              <li key={job.id}>
+                <GenerateJobCard job={job} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="lessons-title" className="mt-10">
         <h2 id="lessons-title" className="text-2xl font-bold">
