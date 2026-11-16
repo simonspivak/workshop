@@ -71,7 +71,7 @@ export const errorMessages = {
   too_long: "Слишком длинный текст.",
   // учитель
   group_code_taken: "Такой код группы уже занят.",
-  too_many_students: "За один раз — не больше 40 учеников.",
+  too_many_students: "За один раз — не больше 60 учеников. Добавьте остальных следующей пачкой.",
 } as const;
 
 export type ErrorCode = keyof typeof errorMessages;

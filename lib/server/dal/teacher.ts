@@ -2,6 +2,7 @@ import "server-only";
 import { AuthError, isStaff, type SessionUser } from "@/lib/server/dal/auth";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
+import { getPriceList } from "@/lib/server/prices";
 import type { AgeBand, GroupKind } from "@/lib/server/supabase/types";
 
 /*
@@ -158,36 +159,36 @@ export async function listStudents(user: SessionUser, groupId: string): Promise<
   }));
 }
 
-export type GroupStarStats = { given: number; spent: number };
+/**
+ * given — всё начисленное ученикам группы (стартовые, ведущим, бонусы тестов, минус снятия);
+ * handed — то же без бонусов тестов (его сравниваем с бюджетом); spent — траты за вычетом возвратов.
+ */
+export type GroupStarStats = { given: number; handed: number; spent: number };
 
-/** Сколько звёзд роздано ученикам группы и сколько они потратили. Вызывать после getGroup. */
+/** RPC-агрегатов кабинета отвечают 'forbidden', если пользователь не ведёт группу. */
+export function teacherRpcError(error: { message?: string; code?: string }, op: string): Error {
+  if (error.message === "forbidden") return new AuthError("forbidden");
+  return new Error(`${op} failed (${error.code})`);
+}
+
+/**
+ * Сколько звёзд роздано ученикам группы и сколько они потратили. Суммирует SQL
+ * (group_star_stats): чтение строк журнала обрезалось бы на 1000 (аудит № 14).
+ * SQL сам проверяет, что пользователь ведёт группу или админ.
+ */
 export async function getGroupStarStats(user: SessionUser, groupId: string): Promise<GroupStarStats> {
   assertStaff(user);
-  const admin = createAdminClient();
-  const { data: students, error } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("group_id", groupId)
-    .eq("role", "student");
-  if (error) throw new Error(`teacher.getGroupStarStats failed (${error.code})`);
-  if (!students?.length) return { given: 0, spent: 0 };
+  const { data, error } = await createAdminClient().rpc("group_star_stats", { p_actor: user.id, p_group: groupId });
+  if (error) throw teacherRpcError(error, "teacher.getGroupStarStats");
+  const row = data?.[0];
+  return { given: Number(row?.given ?? 0), handed: Number(row?.handed ?? 0), spent: Number(row?.spent ?? 0) };
+}
 
-  const { data: rows, error: ledgerError } = await admin
-    .from("star_ledger")
-    .select("delta, reason")
-    .in(
-      "user_id",
-      students.map((s) => s.id),
-    );
-  if (ledgerError) throw new Error(`teacher.getGroupStarStats ledger failed (${ledgerError.code})`);
-
-  let given = 0;
-  let spent = 0;
-  for (const row of rows ?? []) {
-    if (row.reason === "debit" || row.reason === "bot_reply" || row.reason === "refund") spent -= row.delta;
-    else given += row.delta;
-  }
-  return { given, spent: Math.max(0, spent) };
+/** Самая дешёвая цена видео для ученика — порог «мало звёзд» в списке учеников. */
+export async function lowBalanceThreshold(): Promise<number> {
+  const prices = await getPriceList();
+  const video = prices.filter((p) => p.action === "video" && p.access === "all").map((p) => p.stars);
+  return video.length ? Math.min(...video) : 25;
 }
 
 // ---------- проверки для Server Actions ----------

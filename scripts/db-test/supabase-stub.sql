@@ -33,6 +33,13 @@ create table if not exists auth.users (
   created_at         timestamptz not null default now()
 );
 
+-- сессии входа (в Supabase — ещё refresh_tokens с каскадом от sessions)
+create table if not exists auth.sessions (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
 create or replace function auth.uid() returns uuid
 language sql stable as $$
   select nullif(coalesce(

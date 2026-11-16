@@ -1,12 +1,26 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { grantStudentStars, resetStudentPassword, updateStudentAge, type GrantResult, type ResetPasswordResult } from "../../actions";
+import {
+  grantStudentStars,
+  resetStudentPassword,
+  setStudentDisabled,
+  updateStudentAge,
+  type GrantResult,
+  type ResetPasswordResult,
+} from "../../actions";
 import { FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
-import { Badge, Notice, Stars, hintClass, inputClass, labelClass } from "@/components/platform/ui";
+import { Badge, Notice, Stars, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { UnlockLoginButton } from "./UnlockLoginButton";
 import { ageBandLabels, type ActionResult, type AgeBand } from "@/lib/platform/messages";
+import {
+  countStudents,
+  filterStudents,
+  sortStudents,
+  type StudentFilter,
+  type StudentSort,
+} from "@/lib/platform/teacher-cabinet";
 
 export type StudentItem = {
   id: string;
@@ -18,22 +32,84 @@ export type StudentItem = {
   balance: number;
 };
 
-export function StudentList({ students }: { students: StudentItem[] }) {
+const sortLabels: Record<StudentSort, string> = {
+  balance: "по балансу",
+  login: "по логину",
+  nickname: "по нику",
+};
+
+/**
+ * lowThreshold — сколько стоит самое дешёвое видео: у кого меньше, тот «на исходе».
+ * Порядок и фильтр — в браузере; строки держат ключ id, поэтому обновление страницы
+ * не закрывает раскрытого ученика и не стирает набранное в формах.
+ */
+export function StudentList({ students, lowThreshold }: { students: StudentItem[]; lowThreshold: number }) {
+  const [sort, setSort] = useState<StudentSort>("balance");
+  const [filter, setFilter] = useState<StudentFilter>("all");
+
   if (students.length === 0) {
     return <p className="text-ink-soft">Учеников пока нет. Добавьте их пачкой выше.</p>;
   }
+
+  const counts = countStudents(students, lowThreshold);
+  const filters: { value: StudentFilter; label: string }[] = [
+    { value: "all", label: `Все · ${counts.all}` },
+    { value: "zero", label: `0 ★ · ${counts.zero}` },
+    { value: "low", label: `Меньше ${lowThreshold} ★ · ${counts.low}` },
+    ...(counts.disabled > 0 ? [{ value: "disabled" as const, label: `Отключены · ${counts.disabled}` }] : []),
+  ];
+  const visible = sortStudents(filterStudents(students, filter, lowThreshold), sort);
+
   return (
-    <ul className="divide-y divide-ink/10">
-      {students.map((student) => (
-        <StudentRow key={student.id} student={student} />
-      ))}
-    </ul>
+    <>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div role="group" aria-label="Показать" className="flex flex-wrap gap-2">
+          {filters.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={filter === f.value}
+              onClick={() => setFilter(f.value)}
+              className={`rounded-full px-3 py-1.5 font-mono text-xs font-medium ring-1 transition-colors ${
+                filter === f.value ? "bg-violet text-white ring-violet" : "bg-white text-ink ring-ink/15 hover:bg-lavender"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          Порядок
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as StudentSort)}
+            className="min-h-10 rounded-full border border-ink/15 bg-white px-3 text-sm text-ink"
+          >
+            {Object.entries(sortLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {visible.length === 0 ? (
+        <p className="mt-4 text-ink-soft">Таких учеников нет.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-ink/10">
+          {visible.map((student) => (
+            <StudentRow key={student.id} student={student} lowThreshold={lowThreshold} />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
-function StudentRow({ student }: { student: StudentItem }) {
+function StudentRow({ student, lowThreshold }: { student: StudentItem; lowThreshold: number }) {
+  const low = !student.disabled && student.balance < lowThreshold;
   return (
-    <li className="py-3">
+    <li className={`py-3 ${student.disabled ? "opacity-70" : ""}`}>
       <details className="group">
         <summary className="flex cursor-pointer list-none flex-col gap-2 rounded-2xl py-1 sm:flex-row sm:items-center sm:gap-4 [&::-webkit-details-marker]:hidden">
           <span className="min-w-0 sm:flex-1">
@@ -44,6 +120,7 @@ function StudentRow({ student }: { student: StudentItem }) {
             <Badge>{ageBandLabels[student.ageBand]}</Badge>
             {student.ageBand !== "adult" && (student.consent ? <Badge tone="violet">согласие</Badge> : <Badge tone="warn">без согласия</Badge>)}
             {student.disabled && <Badge tone="warn">отключён</Badge>}
+            {low && <Badge tone={student.balance <= 0 ? "warn" : "sun"}>{student.balance <= 0 ? "нет звёзд" : "мало звёзд"}</Badge>}
             <span className="font-mono text-sm font-semibold">
               <Stars value={student.balance} />
             </span>
@@ -51,13 +128,14 @@ function StudentRow({ student }: { student: StudentItem }) {
             <span className="ml-auto hidden pl-2 text-sm font-semibold text-violet group-open:inline">Свернуть</span>
           </span>
         </summary>
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <GrantForm studentId={student.id} />
           <AgeForm student={student} />
           <div className="space-y-4">
             <ResetForm studentId={student.id} />
             {student.login && <UnlockLoginButton studentId={student.id} />}
           </div>
+          <DisableForm student={student} />
         </div>
       </details>
     </li>
@@ -165,6 +243,53 @@ function ResetForm({ studentId }: { studentId: string }) {
       <SubmitButton size="sm" variant="danger" pendingText="Сбрасываем…">
         Сбросить пароль
       </SubmitButton>
+    </form>
+  );
+}
+
+/** Отключить или включить ученика — с подтверждением, кнопка рядом с остальными действиями. */
+function DisableForm({ student }: { student: StudentItem }) {
+  const [confirming, setConfirming] = useState(false);
+  const [state, action] = useActionState<ActionResult | null, FormData>(async (prev, formData) => {
+    const result = await setStudentDisabled(prev, formData);
+    if (result.ok) setConfirming(false);
+    return result;
+  }, null);
+
+  return (
+    <form action={action} className="space-y-3 rounded-2xl bg-lavender p-4">
+      <h3 className="font-semibold">Доступ</h3>
+      <input type="hidden" name="studentId" value={student.id} />
+      <input type="hidden" name="disabled" value={student.disabled ? "0" : "1"} />
+      {student.disabled ? (
+        <p className="text-sm text-ink-soft">Аккаунт отключён: ученик не может войти. Звёзды и работы сохранены.</p>
+      ) : (
+        <p className="text-sm text-ink-soft">
+          Отключённый ученик сразу выйдет из кабинета на всех устройствах и не сможет войти. Звёзды и работы сохранятся.
+        </p>
+      )}
+      <FormError state={state} />
+      {student.disabled ? (
+        <SubmitButton size="sm" variant="secondary" pendingText="Включаем…">
+          Включить
+        </SubmitButton>
+      ) : confirming ? (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold">Отключить {student.login ?? student.nickname}?</p>
+          <div className="flex flex-wrap gap-2">
+            <SubmitButton size="sm" variant="danger" pendingText="Отключаем…">
+              Да, отключить
+            </SubmitButton>
+            <button type="button" onClick={() => setConfirming(false)} className={buttonClass("secondary", "sm")}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)} className={buttonClass("danger", "sm")}>
+          Отключить
+        </button>
+      )}
     </form>
   );
 }

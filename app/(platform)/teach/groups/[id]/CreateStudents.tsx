@@ -2,11 +2,15 @@
 
 import { useActionState, useSyncExternalStore } from "react";
 import { Printer } from "lucide-react";
-import { createStudents, type CreateStudentsResult } from "../../actions";
+import { createStudents, type CreatedStudent, type CreateStudentsResult } from "../../actions";
 import { FieldError, FormError } from "@/components/platform/FormError";
 import { SubmitButton } from "@/components/platform/SubmitButton";
 import { Card, Notice, buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import { ageBandLabels } from "@/lib/platform/messages";
+import { mergeCreatedBatch, type CreatedSession } from "@/lib/platform/teacher-cabinet";
+
+type CreateError = Extract<CreateStudentsResult, { ok: false }>;
+type Session = CreatedSession<CreatedStudent, Omit<CreateError, "ok">>;
 
 const subscribe = () => () => {};
 
@@ -39,9 +43,14 @@ export function CreateStudents({
   groupTitle: string;
   starsPerStudent: number | null;
 }) {
-  const [state, action] = useActionState<CreateStudentsResult | null, FormData>(createStudents, null);
+  // Карточки всех пачек копятся до ухода со страницы: вторая пачка не стирает пароли первой (аудит № 29)
+  const [session, action] = useActionState<Session | null, FormData>(
+    async (prev, formData) => mergeCreatedBatch(prev, await createStudents(null, formData)),
+    null,
+  );
+  const state = session?.error ?? null;
   const loginUrl = useLoginUrl();
-  const created = state?.ok ? state.created : [];
+  const created = session?.created ?? [];
 
   return (
     <>
@@ -66,7 +75,7 @@ export function CreateStudents({
               className={`${inputClass} mt-2 font-mono`}
             />
             <p className={hintClass}>
-              Например, «Лиза» → <span className="font-mono">{groupCode}-liza</span>. До 40 за раз. Каждому — {starsPerStudent != null ? `${starsPerStudent.toLocaleString("ru-RU")} ★` : "0 ★ (задайте бюджет группы в настройках)"}.
+              Например, «Лиза» → <span className="font-mono">{groupCode}-liza</span>. До 60 за раз; больше — следующей пачкой, карточки всех пачек останутся на экране до ухода со страницы. Каждому — {starsPerStudent != null ? `${starsPerStudent.toLocaleString("ru-RU")} ★` : "0 ★ (задайте бюджет группы в настройках)"}.
             </p>
             <FieldError state={state} name="nicknames" />
           </div>
@@ -97,19 +106,19 @@ export function CreateStudents({
         </form>
       </Card>
 
-      {state?.ok && (
+      {created.length + (session?.failed.length ?? 0) > 0 && (
         <section aria-labelledby="created-title" className="rounded-3xl bg-sun/30 p-5 ring-1 ring-sun sm:p-6 print:bg-white print:p-0 print:ring-0">
           <div className="print:hidden">
             <h2 id="created-title" className="text-lg font-semibold sm:text-xl">
-              Создано: {created.length}
+              {session && session.batches > 1 ? `Создано на этой странице: ${created.length}` : `Создано: ${created.length}`}
             </h2>
             <Notice tone="warn" className="mt-3">
               Пароли показываются один раз. Распечатайте карточки или перепишите сейчас: после ухода со страницы их
               не будет. Забытый пароль можно сбросить.
             </Notice>
-            {state.failed.length > 0 && (
+            {session && session.failed.length > 0 && (
               <Notice tone="error" className="mt-3">
-                Не удалось создать: {state.failed.join(", ")}. Попробуйте ещё раз.
+                Не удалось создать: {session.failed.join(", ")}. Попробуйте ещё раз.
               </Notice>
             )}
             {created.length > 0 && (
