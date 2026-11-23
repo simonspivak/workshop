@@ -19,13 +19,19 @@ import {
 import { platformErrorMessage } from "@/lib/platform/generation-messages";
 import {
   ASPECT_RATIOS,
+  lipsyncAudioVerdict,
   MOTION_DRIVER_MAX_SEC,
   motionDriverVerdict,
+  MUSIC_DURATION_OPTIONS,
+  MUSIC_VOCAL_OPTIONS,
+  musicCustomMode,
+  STUDENT_LIPSYNC_MAX_SEC,
   VOICE_OPTIONS,
   type AspectRatio,
   type GenerateActionOption,
   type JobView,
   type MediaOption,
+  type MusicVocal,
   type VoiceId,
 } from "@/lib/platform/generation-types";
 
@@ -90,6 +96,8 @@ export function GeneratePanel({
   const driverOptions = staff ? [...library, ...references.filter((r) => r.kind === "video")] : library;
   // образец длиннее потолка (а ученику — и неизвестной длины) из сохранённой формы не подставляем
   const usableDrivers = driverOptions.filter((r) => r.seconds === undefined || motionDriverVerdict(r.seconds, staff) === "ok");
+  // и озвучку длиннее потолка «говорящей головы» (у ученика) — тоже
+  const usableAudio = references.filter((r) => r.kind === "audio" && (action !== "lipsync" || lipsyncAudioVerdict(r.seconds, staff) === "ok"));
   // Настройки формы (голос, манера, формат, выбранные файлы…) живут в sessionStorage по ключу
   // урок:задание:действие: переключение на соседнюю кнопку (скопировать промпт) и обратно
   // монтирует панель заново, а форма остаётся. Панель монтируется только в браузере — читаем сразу.
@@ -101,14 +109,17 @@ export function GeneratePanel({
       longVideo: action === "video" && option.longStars !== null,
       imagePaths: [...references.filter((r) => r.kind === "image"), ...tray.items.filter((t) => t.kind === "image")].map((r) => r.path),
       videoPaths: [...usableDrivers, ...(staff ? tray.items.filter((t) => t.kind === "video") : [])].map((r) => r.path),
-      audioPaths: [...references.filter((r) => r.kind === "audio"), ...tray.items.filter((t) => t.kind === "audio")].map((r) => r.path),
+      audioPaths: [...usableAudio, ...tray.items.filter((t) => t.kind === "audio" && !references.some((r) => r.path === t.path))].map(
+        (r) => r.path,
+      ),
       maxImages: (referenceMode) => (action === "image_edit" ? 4 : action === "video" ? (referenceMode ? 4 : 2) : 1),
     }),
   );
   useEffect(() => {
     writeFormDraft(draftKey, draft);
   }, [draftKey, draft]);
-  const { model, aspect, images, driver, voiceTrack, referenceMode, duration, sound, voice, style, instrumental, lyrics, title } = draft;
+  const { model, aspect, images, driver, voiceTrack, referenceMode, duration, sound, voice, style, instrumental, lyrics, title, musicDuration, vocal } =
+    draft;
   const patch = (next: Partial<GenerateFormDraft>) => setDraft((current) => ({ ...current, ...next }));
   const [pending, setPending] = useState(false);
   // Переписка текстового задания: хранится в браузере, уходит в запрос как история
@@ -127,6 +138,8 @@ export function GeneratePanel({
   }
   const transcript = useCopy();
   const [error, setError] = useState<string | null>(null);
+  // длина файла из отказа сервера (lipsync_audio): «Озвучка длится 22 с — нужно не больше 20 с»
+  const [errorSeconds, setErrorSeconds] = useState<number | undefined>(undefined);
   const [info, setInfo] = useState<string | null>(null);
   // один ключ на одно намерение: повтор после сбоя сети не спишет второй раз
   const keyRef = useRef<string | null>(null);
@@ -140,6 +153,7 @@ export function GeneratePanel({
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setErrorSeconds(undefined);
     setInfo(null);
     if (promptRequired && !prompt.trim()) return setError("invalid_input");
     // шаблон из задания вставляется программно, maxLength его не обрезает
@@ -186,14 +200,20 @@ export function GeneratePanel({
       case "voice":
         Object.assign(body, { text, voice, style: style.trim() || undefined });
         break;
-      case "music":
+      case "music": {
+        const songLyrics = instrumental ? undefined : lyrics.trim() || undefined;
+        // длина и голос — только в custom-режиме Suno: без вокала или свой текст песни
+        const custom = musicCustomMode({ instrumental, lyrics: songLyrics });
         Object.assign(body, {
           prompt: text,
           instrumental,
-          lyrics: instrumental ? undefined : lyrics.trim() || undefined,
+          lyrics: songLyrics,
           title: title.trim() || undefined,
+          duration: custom ? musicDuration : undefined,
+          vocalGender: songLyrics && vocal !== "any" ? vocal : undefined,
         });
         break;
+      }
     }
 
     setPending(true);
@@ -203,6 +223,7 @@ export function GeneratePanel({
       // после обрыва (сеть, 5xx без ответа маршрута) ключ тот же: повтор найдёт ту же задачу
       if (!result.network && !result.infra) keyRef.current = null;
       setError(result.error);
+      setErrorSeconds(result.seconds);
       return;
     }
     keyRef.current = null;
@@ -350,6 +371,7 @@ export function GeneratePanel({
           onChange={(paths) => patch({ driver: paths })}
           allowUrl={staff}
           staff={staff}
+          lengthLimit="motion"
           emptyText="Библиотека движений пока пуста."
         />
       )}
@@ -357,7 +379,11 @@ export function GeneratePanel({
       {action === "lipsync" && (
         <GenerateReferencePicker
           label="Озвучка"
-          hint={staff ? "Своя реплика из галереи (озвучка)." : "Своя реплика из галереи. Только озвучка до 15 секунд."}
+          hint={
+            staff
+              ? "Своя реплика из галереи (озвучка)."
+              : `Своя реплика из галереи. Только озвучка до ${STUDENT_LIPSYNC_MAX_SEC} секунд, лучше 10–15.`
+          }
           kind="audio"
           actions={staff ? undefined : STUDENT_LIPSYNC_AUDIO_ACTIONS}
           options={references}
@@ -365,6 +391,8 @@ export function GeneratePanel({
           value={voiceTrack}
           onChange={(paths) => patch({ voiceTrack: paths })}
           allowUrl={staff}
+          staff={staff}
+          lengthLimit="lipsync"
           emptyText="Озвучек в галерее пока нет. Сначала озвучьте реплику."
         />
       )}
@@ -446,12 +474,53 @@ export function GeneratePanel({
               />
             </div>
           )}
+          {musicCustomMode({ instrumental, lyrics }) ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor={`${id}-music-duration`} className={labelClass}>
+                  Длина трека
+                </label>
+                <select
+                  id={`${id}-music-duration`}
+                  value={musicDuration}
+                  onChange={(e) => patch({ musicDuration: Number(e.target.value) })}
+                  className={`${inputClass} mt-2`}
+                >
+                  {MUSIC_DURATION_OPTIONS.map((o) => (
+                    <option key={o.seconds} value={o.seconds}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {!instrumental && (
+                <div>
+                  <label htmlFor={`${id}-vocal`} className={labelClass}>
+                    Голос
+                  </label>
+                  <select id={`${id}-vocal`} value={vocal} onChange={(e) => patch({ vocal: e.target.value as MusicVocal })} className={`${inputClass} mt-2`}>
+                    {MUSIC_VOCAL_OPTIONS.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className={hintClass}>
+              Длину трека и голос можно выбрать, если отмечено «Без вокала» или вписан свой текст песни. Без них Suno сам решит, сколько
+              будет длиться песня.
+            </p>
+          )}
           <div>
             <label htmlFor={`${id}-title`} className={labelClass}>
               Название (необязательно)
             </label>
             <input id={`${id}-title`} value={title} onChange={(e) => patch({ title: e.target.value })} maxLength={TITLE_MAX} className={`${inputClass} mt-2`} />
           </div>
+          <p className={hintClass}>Придут 2 трека, оба целиком — их можно послушать и скачать в «Галерее».</p>
         </div>
       )}
 
@@ -498,7 +567,7 @@ export function GeneratePanel({
         </label>
       )}
 
-      {error && <Notice tone="error">{platformErrorMessage(error)}</Notice>}
+      {error && <Notice tone="error">{platformErrorMessage(error, { seconds: errorSeconds })}</Notice>}
       {info && <Notice tone="success">{info}</Notice>}
 
       <button type="submit" disabled={pending} className={buttonClass("primary")}>

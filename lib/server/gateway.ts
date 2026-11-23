@@ -126,8 +126,13 @@ export type MusicRequest = {
   instrumental?: boolean;
   lyrics?: string;
   title?: string;
-  /** 10–60 с */
+  /**
+   * Длина трека, 10–120 с. Только в custom-режиме Suno (instrumental или свой lyrics).
+   * «Build KIE Request» режет до 60 с, до 120 — «Доработка запроса» (docs/kie-gateway.md, «Музыка: длина и голос»).
+   */
   duration?: number;
+  /** Голос певца: m — мужской, f — женский. Только для песни со своим текстом (lyrics), не для instrumental. */
+  vocalGender?: "m" | "f";
 };
 
 export type TaskRequest =

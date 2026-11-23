@@ -1,7 +1,7 @@
 // Коды ошибок генераций, галереи и уроков (этап B1). Дополняют lib/platform/messages.ts.
 // Файл можно импортировать в клиентские компоненты: здесь только тексты.
 
-import { MOTION_DRIVER_MAX_SEC } from "@/lib/platform/generation-types";
+import { formatDriverSeconds, MOTION_DRIVER_MAX_SEC, STUDENT_LIPSYNC_MAX_SEC } from "@/lib/platform/generation-types";
 import { errorMessage } from "@/lib/platform/messages";
 
 export const generationErrorMessages = {
@@ -10,7 +10,7 @@ export const generationErrorMessages = {
   reference_required: "Выберите файл из галереи.",
   library_only: "Видео с движением — только из библиотеки курса.",
   library_empty: "Библиотека движений курса пока пуста. Спросите ведущего.",
-  lipsync_audio: "Для «говорящей головы» нужна своя озвучка реплики из галереи, не длиннее 15 секунд. Длинный текст разрежьте на куски.",
+  lipsync_audio: `Для «говорящей головы» нужна своя озвучка реплики из галереи, не длиннее ${STUDENT_LIPSYNC_MAX_SEC} секунд. Длинный текст разрежьте на куски.`,
   motion_too_long: `Образец длиннее ${MOTION_DRIVER_MAX_SEC} секунд. Выберите другой или попросите ведущего обрезать его.`,
   motion_unchecked: "Не удалось проверить длину образца. Попробуйте через минуту или выберите другой образец.",
   gateway_error:"Сервис ИИ сейчас перегружен или не ответил. Звёзды вернулись — подожди минуту и попробуй ещё раз.",
@@ -31,8 +31,22 @@ export const generationErrorMessages = {
 
 export type GenerationErrorCode = keyof typeof generationErrorMessages;
 
-/** Текст для кода ошибки: сначала коды B1, потом общие из messages.ts. */
-export function platformErrorMessage(code: string | null | undefined): string {
+/**
+ * Текст для кода ошибки: сначала коды B1, потом общие из messages.ts.
+ * seconds — длина файла из ответа сервера (lipsync_audio): тогда текст говорит, сколько длится озвучка.
+ */
+export function platformErrorMessage(code: string | null | undefined, details: { seconds?: number | null } = {}): string {
+  if (code === "lipsync_audio" && typeof details.seconds === "number" && details.seconds > 0) {
+    return lipsyncTooLongMessage(details.seconds);
+  }
   if (code && code in generationErrorMessages) return generationErrorMessages[code as GenerationErrorCode];
   return errorMessage(code);
+}
+
+/** «Озвучка длится 22 с — для говорящей головы нужно не больше 20 с. …» */
+export function lipsyncTooLongMessage(seconds: number): string {
+  return (
+    `Озвучка длится ${formatDriverSeconds(seconds)} — для говорящей головы нужно не больше ${STUDENT_LIPSYNC_MAX_SEC} с. ` +
+    "Сократи реплику на пару слов или раздели её на две."
+  );
 }

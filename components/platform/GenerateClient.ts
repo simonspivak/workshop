@@ -20,6 +20,8 @@ export type GenerateResponse =
       ok: false;
       error: string;
       jobId?: string;
+      /** длина файла в секундах, если сервер её сообщил (lipsync_audio: озвучка длиннее потолка) */
+      seconds?: number;
       /** запрос не ушёл или ответ оборвался в сети */
       network?: boolean;
       /** 5xx без нашего JSON (таймаут Vercel 504 и т. п.): задача могла создаться и списать звёзды */
@@ -48,6 +50,7 @@ export async function postGenerate(body: Record<string, unknown>): Promise<Gener
       ok: false,
       error: typeof data?.error === "string" ? data.error : "server_error",
       jobId: typeof data?.jobId === "string" ? data.jobId : undefined,
+      seconds: typeof data?.seconds === "number" && Number.isFinite(data.seconds) ? data.seconds : undefined,
     };
   }
   return {

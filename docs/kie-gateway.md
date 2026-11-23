@@ -285,6 +285,57 @@ if (out.route === 'text') {
 - Предел размера и числа картинок у kie: не документирован. Платформа шлёт не больше 6, загруженный файл — не больше 20 МБ.
 - Видит ли Haiku картинки через `/claude/v1/messages`. Поэтому `CLAUDE_IMAGES = false`, а платформа Claude картинки не шлёт.
 
+## Музыка: длина и голос (23 ноября 2026)
+
+**Зачем.** Платформа не передавала длину, и шлюз ставил 30 с: каждый трек был 30 с, а ученики монтируют ролики на 60–90 с — песня со словами обрывалась на припеве. Голос певца выбрать было нельзя.
+
+### Что сказано в документации kie (Suno)
+
+- В custom-режиме есть необязательные `duration` — желаемая длина трека в секундах, 10–360, и `vocal_gender` — `m` или `f`.
+- Оба поля работают **только в custom-режиме**. «Build KIE Request» включает его, когда есть `lyrics` или `instrumental: true`. Простой режим («опиши песню», Suno сам пишет слова) их не принимает.
+- 23 ноября kie брал 12 кредитов за генерацию независимо от длины и возвращал 2 трека.
+
+### Что присылает платформа
+
+```json
+{ "action": "music", "model": "ai-music-api/generate", "prompt": "pop, warm, acoustic guitar",
+  "lyrics": "[Verse]\n…", "title": "…", "duration": 90, "vocalGender": "f", "jobId": "…" }
+```
+
+- `duration` — 30, 60, 90 или 120 (схема `/api/generate` принимает любое целое 10–120). Только с `lyrics` или с `instrumental: true`.
+- `vocalGender` — `m` или `f`, только с `lyrics`. «Любой» — поля нет. С `instrumental: true` не приходит никогда, и `lyrics` тогда тоже нет.
+- Простой режим (без `lyrics` и без `instrumental`) — ни `duration`, ни `vocalGender`.
+
+### Что сделать в n8n (Сеня)
+
+«Build KIE Request» (узел с ключом) не трогаем: он режет `duration` до 60 с (`Math.min(… || 30, 60)`) и `vocalGender` не знает. Всё делается в **«Доработке запроса»**: узел стоит после Build, видит исходное тело (`body`) и может переписать `out.payload.input`.
+
+Добавить перед последней строкой узла `return [{ json: out }];`:
+
+```js
+// 5) Музыка: длина до 2 минут и голос певца (платформа, 23 ноября 2026).
+//    Suno принимает duration и vocal_gender только в custom_mode (свой текст или без вокала).
+//    «Build KIE Request» режет duration до 60 с и голос не знает — правим здесь.
+const music = out.payload && out.payload.input;
+if (out.route === 'create' && out.action === 'music' && music && typeof music === 'object' && music.custom_mode === true) {
+  const seconds = Math.round(Number(body.duration));
+  if (Number.isFinite(seconds) && seconds > 0) music.duration = Math.max(10, Math.min(seconds, 120));
+  if (music.instrumental !== true && (body.vocalGender === 'm' || body.vocalGender === 'f')) music.vocal_gender = body.vocalGender;
+  else delete music.vocal_gender;
+}
+```
+
+- Работает только для `route: 'create'`, `action: 'music'` и `custom_mode: true`. Простой режим не трогается.
+- `duration` — целое 10–120 (kie допускает до 360, платформа больше 120 не шлёт). Нет поля — остаётся значение Build (30 с).
+- `vocal_gender` — только `m` или `f` и только у песни с вокалом. Прочие значения и `instrumental: true` — поля нет.
+- Проверено без сети: сниппет вставлен в копию «Доработки запроса» и прогнан на копии музыкальной ветки Build — 120 с без вокала, 90 с с `f`, 500 → 120 и `x` → без голоса, простой режим без изменений.
+
+### Что не проверено (до первого настоящего вызова)
+
+- Насколько точно Suno V6 Mini держит `duration` (это «желаемая» длина) и меняется ли цена за трек 2 минуты. Смотреть длину треков и `credits` в первых ответах.
+- Как `vocal_gender` слышен на русском тексте.
+- Время генерации трека 2 минуты: таймауты платформы для музыки прежние (§ «Ошибки шлюза и повторы»).
+
 ## Действия и модели
 
 Первая модель в списке — по умолчанию. Другую можно выбрать полем `model`, но только из этого списка.
@@ -298,7 +349,7 @@ if (out.route === 'text') {
 | `motion` | `kling-2.6/motion-control`, `wan/2-2-animate-move` | `images[0]` (персонаж), `video` (видео-драйвер с движением) | `prompt` |
 | `lipsync` | `kling/ai-avatar-standard`, `infinitalk/from-audio` | `images[0]`, `audio` | `prompt` |
 | `voice` | `google/gemini-3-8-flash-tts` | `text` | `style` (манера речи), `voice` (по умолчанию `Kore`) |
-| `music` | `ai-music-api/generate` (Suno V6 Mini) | `prompt` | `instrumental: true`, `lyrics`, `title`, `duration` (10–60 с) |
+| `music` | `ai-music-api/generate` (Suno V6 Mini) | `prompt` | `instrumental: true`, `lyrics`, `title`; только в custom-режиме (`lyrics` или `instrumental: true`): `duration` (10–120 с; Build режет до 60, до 120 — «Доработка запроса»), `vocalGender` (`m` \| `f`, только с `lyrics`, раздел «Музыка: длина и голос») |
 | `status` | — | `taskId` | — |
 | `balance` | — | — | — |
 

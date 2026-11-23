@@ -52,8 +52,9 @@ export type MediaOption = {
   /** звук: начало реплики или название трека — чтобы выбирать не вслепую */
   text?: string;
   /**
-   * Образец движения из библиотеки: длина в секундах по заголовку MP4 (lib/server/motion-driver.ts).
-   * null — длину узнать не удалось; поля нет — не проверяли (не библиотека).
+   * Длина в секундах: образец движения из библиотеки — по заголовку MP4 (lib/server/motion-driver.ts),
+   * озвучка — по заголовку WAV (lib/server/storage.ts, voiceSecondsFor).
+   * null — длину узнать не удалось; поля нет — не проверяли.
    */
   seconds?: number | null;
 };
@@ -88,9 +89,55 @@ export function motionDriverVerdict(seconds: number | null | undefined, staff: b
   return seconds > MOTION_DRIVER_MAX_SEC + MOTION_DRIVER_TOLERANCE_SEC ? "too_long" : "ok";
 }
 
-/** «10 с», «7 с»: длина образца на плитке. */
+/** «10 с», «7 с»: длина образца или озвучки на плитке. */
 export function formatDriverSeconds(seconds: number): string {
   return `${Math.max(1, Math.round(seconds))} с`;
+}
+
+// ---------- говорящая голова: длина озвучки ----------
+
+/**
+ * Потолок длины озвучки для «говорящей головы» у ученика, секунды. Одна константа на всё: проверка
+ * сервера (lib/server/storage.ts), плитки выбора озвучки, тексты ошибок, урок 3 и docs/platform/spec.md.
+ * Модель (kling/ai-avatar-standard) принимает до 5 минут, но kie берёт ≈ 8,7 кредита за секунду аудио,
+ * а цена в звёздах одна (spec.md §3, «Цена и длина» у говорящей головы). Ведущему потолка нет.
+ */
+export const STUDENT_LIPSYNC_MAX_SEC = 20;
+/** Допуск: TTS докидывает к фразе тишину в конце, 20,4 с — это ещё «20 секунд». */
+export const STUDENT_LIPSYNC_TOLERANCE_SEC = 0.5;
+
+/** Можно ли взять озвучку такой длины. Неизвестная длина — можно: решает проверка сервера. */
+export function lipsyncAudioVerdict(seconds: number | null | undefined, staff: boolean): "ok" | "too_long" {
+  if (staff || seconds === null || seconds === undefined) return "ok";
+  return seconds > STUDENT_LIPSYNC_MAX_SEC + STUDENT_LIPSYNC_TOLERANCE_SEC ? "too_long" : "ok";
+}
+
+// ---------- музыка: длина трека и голос ----------
+
+/**
+ * Длина трека Suno, секунды (поле duration шлюза). Только для custom-режима: без вокала или со своим
+ * текстом песни. В простом режиме («опиши песню») Suno длину и голос не принимает.
+ */
+export const MUSIC_DURATION_OPTIONS = [
+  { seconds: 30, label: "30 с" },
+  { seconds: 60, label: "1 мин" },
+  { seconds: 90, label: "1,5 мин" },
+  { seconds: 120, label: "2 мин" },
+] as const;
+export const MUSIC_DEFAULT_DURATION = 60;
+export const MUSIC_MAX_DURATION = 120;
+
+/** Голос певца (vocal_gender у Suno): только для песни со своим текстом. */
+export const MUSIC_VOCAL_OPTIONS = [
+  { id: "any", label: "Любой" },
+  { id: "m", label: "Мужской" },
+  { id: "f", label: "Женский" },
+] as const;
+export type MusicVocal = (typeof MUSIC_VOCAL_OPTIONS)[number]["id"];
+
+/** Custom-режим Suno: без вокала или со своим текстом. Только в нём работают длина и голос. */
+export function musicCustomMode(input: { instrumental?: boolean; lyrics?: string | null }): boolean {
+  return input.instrumental === true || Boolean(input.lyrics?.trim());
 }
 
 export const jobActionLabels: Record<JobAction, string> = {

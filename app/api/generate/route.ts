@@ -7,7 +7,7 @@ import { generateRequestSchema, isSameOriginRequest, startGeneration } from "@/l
   POST /api/generate — запуск генерации (docs/platform/spec.md §3).
   Ответ: 202 { jobId } — задача создана, статус спрашивать в GET /api/jobs/[id];
          200 { jobId, job } — текст (синхронно);
-         4xx/5xx { error } — код из lib/platform/messages.ts или generation-messages.ts.
+         4xx/5xx { error, field?, seconds? } — код из lib/platform/messages.ts или generation-messages.ts.
 */
 
 // синхронный текст ждёт модель до 60 секунд
@@ -44,7 +44,8 @@ export async function POST(request: NextRequest) {
       case "text":
         return json({ jobId: outcome.job.id, job: outcome.job, balance: outcome.balance }, 200);
       case "error":
-        return json({ error: outcome.error, field: outcome.field, jobId: outcome.jobId }, outcome.status);
+        // seconds — длина озвучки при отказе lipsync_audio (форма пишет, сколько она длится)
+        return json({ error: outcome.error, field: outcome.field, jobId: outcome.jobId, seconds: outcome.seconds }, outcome.status);
     }
   } catch (error) {
     if (error instanceof AuthError) return json({ error: error.code }, error.code === "unauthorized" ? 401 : 403);

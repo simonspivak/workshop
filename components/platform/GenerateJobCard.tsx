@@ -4,7 +4,7 @@ import { RichText } from "@/components/platform/RichText";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, Copy, EyeOff, LoaderCircle, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
+import { Check, Copy, ExternalLink, EyeOff, LoaderCircle, LogIn, RefreshCw, TriangleAlert } from "lucide-react";
 import { DeleteJobButton, canDeleteJob } from "@/components/platform/DeleteJobButton";
 import { loginAgainHref, useLiveJob, type LiveJob, type LivePollStop } from "@/components/platform/GenerateClient";
 import { Badge, Stars, buttonClass } from "@/components/platform/ui";
@@ -55,6 +55,8 @@ export function JobMedia({ job, renderFileActions }: { job: JobView; renderFileA
     <div className="space-y-3">
       {job.media.map((file, i) => (
         <div key={file.path} className="space-y-2">
+          {/* Suno присылает 2 трека: подписываем, чтобы было видно, что их два и какой где */}
+          {job.action === "music" && job.media.length > 1 && <p className="font-mono text-xs text-ink-soft">Трек {i + 1}</p>}
           <MediaPreview file={file} alt={`${jobActionLabels[job.action]}${job.media.length > 1 ? `, файл ${i + 1}` : ""}`} />
           {renderFileActions?.(file)}
         </div>
@@ -208,7 +210,17 @@ export function GenerateJobCard({
         </details>
       )}
       <JobStatusLine job={job} live={live} />
-      <JobMedia job={job} />
+      <JobMedia
+        job={job}
+        renderFileActions={(file) =>
+          // звук: у плеера не во всех браузерах есть «Скачать» — ссылка на весь файл, как в «Галерее»
+          file.kind === "audio" ? (
+            <a href={file.url} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "sm")}>
+              <ExternalLink aria-hidden="true" className="size-4" /> Открыть
+            </a>
+          ) : null
+        }
+      />
       {onDeleted && canDeleteJob(job) && (
         <div className="flex justify-end">
           <DeleteJobButton job={job} onDeleted={onDeleted} />
