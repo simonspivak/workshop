@@ -462,7 +462,7 @@ export function GeneratePanel({
           {!instrumental && (
             <div>
               <label htmlFor={`${id}-lyrics`} className={labelClass}>
-                Текст песни (необязательно)
+                Текст песни — свои слова (необязательно)
               </label>
               <textarea
                 id={`${id}-lyrics`}
@@ -474,44 +474,51 @@ export function GeneratePanel({
               />
             </div>
           )}
-          {musicCustomMode({ instrumental, lyrics }) ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Поля видны всегда: в режиме «Suno сам пишет слова» они неактивны, и рядом сказано, что сделать */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor={`${id}-music-duration`} className={labelClass}>
+                Длина трека
+              </label>
+              <select
+                id={`${id}-music-duration`}
+                value={musicDuration}
+                onChange={(e) => patch({ musicDuration: Number(e.target.value) })}
+                disabled={!musicCustomMode({ instrumental, lyrics })}
+                className={`${inputClass} mt-2 disabled:opacity-50`}
+              >
+                {MUSIC_DURATION_OPTIONS.map((o) => (
+                  <option key={o.seconds} value={o.seconds}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {!instrumental && (
               <div>
-                <label htmlFor={`${id}-music-duration`} className={labelClass}>
-                  Длина трека
+                <label htmlFor={`${id}-vocal`} className={labelClass}>
+                  Голос певца
                 </label>
                 <select
-                  id={`${id}-music-duration`}
-                  value={musicDuration}
-                  onChange={(e) => patch({ musicDuration: Number(e.target.value) })}
-                  className={`${inputClass} mt-2`}
+                  id={`${id}-vocal`}
+                  value={vocal}
+                  onChange={(e) => patch({ vocal: e.target.value as MusicVocal })}
+                  disabled={!musicCustomMode({ instrumental, lyrics })}
+                  className={`${inputClass} mt-2 disabled:opacity-50`}
                 >
-                  {MUSIC_DURATION_OPTIONS.map((o) => (
-                    <option key={o.seconds} value={o.seconds}>
+                  {MUSIC_VOCAL_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
                       {o.label}
                     </option>
                   ))}
                 </select>
               </div>
-              {!instrumental && (
-                <div>
-                  <label htmlFor={`${id}-vocal`} className={labelClass}>
-                    Голос
-                  </label>
-                  <select id={`${id}-vocal`} value={vocal} onChange={(e) => patch({ vocal: e.target.value as MusicVocal })} className={`${inputClass} mt-2`}>
-                    {MUSIC_VOCAL_OPTIONS.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          ) : (
+            )}
+          </div>
+          {!musicCustomMode({ instrumental, lyrics }) && (
             <p className={hintClass}>
-              Длину трека и голос можно выбрать, если отмечено «Без вокала» или вписан свой текст песни. Без них Suno сам решит, сколько
-              будет длиться песня.
+              Чтобы выбрать длину и голос, впиши свои слова в «Текст песни» выше. Без своих слов Suno сам сочинит текст и сам решит,
+              сколько длится песня.
             </p>
           )}
           <div>
