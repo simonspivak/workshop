@@ -52,10 +52,11 @@ async function Lesson({ lesson }: { lesson: LessonView }) {
   const staff = isStaff(user);
   const usesMotion = lesson.tasks.some((task) => task.aiActions.some((a) => a.type === "motion"));
   const library = usesMotion ? await listMotionLibrary() : [];
+  const usesLipsync = lesson.tasks.some((task) => task.aiActions.some((a) => a.type === "lipsync"));
   const [state, actions, references, homework] = await Promise.all([
     getLessonState(user, lesson.id),
     describeLessonActions(user, lesson, { motionLibraryEmpty: library.length === 0 }),
-    listReferenceOptions(user),
+    listReferenceOptions(user, { voiceSeconds: usesLipsync }),
     getLessonHomework(user, lesson.id),
   ]);
 

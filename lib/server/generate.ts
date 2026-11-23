@@ -24,10 +24,10 @@ import type { ReferenceInput } from "@/lib/server/media-refs";
 import { moderateFields } from "@/lib/server/moderation";
 import { checkMotionDriver } from "@/lib/server/motion-driver";
 import { canUse, LONG_TEXT_TOKENS } from "@/lib/server/prices";
-import { checkStudentLipsyncAudio, resolveReferences } from "@/lib/server/storage";
+import { checkLipsyncAudio, resolveReferences } from "@/lib/server/storage";
 import type { Json } from "@/lib/server/supabase/types";
 import { createJobWithDebit, refundJob, type WalletError } from "@/lib/server/wallet";
-import { ASPECT_RATIOS, VOICE_IDS, type JobView } from "@/lib/platform/generation-types";
+import { ASPECT_RATIOS, MUSIC_MAX_DURATION, musicCustomMode, VOICE_IDS, type JobView } from "@/lib/platform/generation-types";
 import type { GenerationErrorCode } from "@/lib/platform/generation-messages";
 import type { ErrorCode } from "@/lib/platform/messages";
 
@@ -37,6 +37,7 @@ import type { ErrorCode } from "@/lib/platform/messages";
     2) модерация текста (стоп-слова, личные данные);
     3) референсы: только свои файлы из Storage → подписанные ссылки на час; для motion — длина
        образца по заголовку MP4 (lib/server/motion-driver.ts, потолок MOTION_DRIVER_MAX_SEC);
+       для lipsync — длина озвучки по заголовку WAV (lib/server/storage.ts, потолок STUDENT_LIPSYNC_MAX_SEC);
     4) пауза группы, дневной лимит, баланс и списание — одной SQL-транзакцией (create_job);
     5) отправка в шлюз. Текст — синхронно, остальное — задача, которую опрашивает GET /api/jobs/[id].
   Повтор с тем же idempotencyKey (двойной клик) не списывает дважды и не отправляет в шлюз второй раз.
@@ -124,7 +125,9 @@ export const generateRequestSchema = z.discriminatedUnion("action", [
     instrumental: z.boolean().optional(),
     lyrics: optionalText(3000),
     title: optionalText(80),
-    duration: z.number().int().min(10).max(60).optional(),
+    // длина трека и голос — только в custom-режиме Suno (без вокала или свой текст), см. buildTaskRequest
+    duration: z.number().int().min(10).max(MUSIC_MAX_DURATION).optional(),
+    vocalGender: z.enum(["m", "f"]).optional(),
     ...common,
   }),
 ]);
@@ -138,7 +141,7 @@ export type GenerateErrorCode = ErrorCode | GenerationErrorCode;
 export type GenerateOutcome =
   | { kind: "accepted"; jobId: string; balance: number | null; reused: boolean }
   | { kind: "text"; job: JobView; balance: number | null }
-  | { kind: "error"; status: number; error: GenerateErrorCode; field?: string; jobId?: string };
+  | { kind: "error"; status: number; error: GenerateErrorCode; field?: string; jobId?: string; seconds?: number };
 
 const WALLET_STATUS: Record<WalletError, number> = {
   insufficient_stars: 409,
@@ -162,8 +165,8 @@ const WALLET_STATUS: Record<WalletError, number> = {
  * аудио, а цена в звёздах одна. Реплики в уроке — до 10 слов. Ведущему — как в схеме (2000).
  */
 const STUDENT_VOICE_MAX_CHARS = 600;
-// Другие потолки по длине: образец переноса движения — MOTION_DRIVER_MAX_SEC (10 с,
-// lib/platform/generation-types.ts), озвучка для «говорящей головы» — STUDENT_LIPSYNC_MAX_SEC (storage.ts).
+// Другие потолки по длине (lib/platform/generation-types.ts): образец переноса движения —
+// MOTION_DRIVER_MAX_SEC (10 с), озвучка для «говорящей головы» — STUDENT_LIPSYNC_MAX_SEC (20 с).
 
 const HISTORY_CHAR_LIMIT = 13_000; // + новое сообщение (до MAX_PROMPT) укладывается в лимит шлюза 20 000
 
@@ -271,8 +274,20 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
     libraryOnlyVideo: input.action === "motion" && decision.libraryOnly,
   });
   if (!references.ok) return { kind: "error", status: 403, error: references.error };
-  if (!staff && input.action === "lipsync" && !(await checkStudentLipsyncAudio(references.refs.stored.audio ?? ""))) {
-    return { kind: "error", status: 403, error: "lipsync_audio", field: "audio" };
+  // Говорящая голова: kie берёт кредиты за каждую секунду озвучки — длину проверяем до списания
+  let audioSeconds: number | null = null;
+  if (input.action === "lipsync") {
+    const audio = await checkLipsyncAudio({
+      staff,
+      path: references.refs.stored.audio ?? "",
+      url: references.refs.urls.audio ?? "",
+    });
+    if (!audio.ok) {
+      // длина в ответе: форма пишет «Озвучка длится 22 с — нужно не больше 20 с»
+      const seconds = audio.seconds !== null ? Math.round(audio.seconds * 10) / 10 : undefined;
+      return { kind: "error", status: 403, error: "lipsync_audio", field: "audio", ...(seconds !== undefined ? { seconds } : {}) };
+    }
+    audioSeconds = audio.seconds;
   }
   // Перенос движения: kie берёт кредиты за каждую секунду образца — длину проверяем до списания
   let driverSeconds: number | null = null;
@@ -299,6 +314,8 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
       ...(callbackPlanned(input.action) ? { callback: true } : {}),
       // длина образца движения: по ней видно, сколько кредитов kie ушло на задачу
       ...(driverSeconds !== null ? { driverSeconds: Math.round(driverSeconds * 100) / 100 } : {}),
+      // длина озвучки говорящей головы: kie берёт ≈ 8,7 кредита за секунду (spec.md, «Цена и длина»)
+      ...(audioSeconds !== null ? { audioSeconds: Math.round(audioSeconds * 100) / 100 } : {}),
     },
     prompt: input.action === "voice" ? input.text : (input.prompt ?? null),
     lessonId: input.lessonId ?? null,
@@ -466,14 +483,17 @@ function jobParams(input: GenerateRequest, refs: ReferenceInput): Record<string,
       };
     case "voice":
       return { ...base, voice: input.voice, style: input.style };
-    case "music":
+    case "music": {
+      const music = musicFields(input);
       return {
         ...base,
-        instrumental: input.instrumental ?? false,
+        instrumental: music.instrumental ?? false,
         title: input.title,
-        lyrics: input.lyrics,
-        duration: input.duration,
+        lyrics: music.lyrics,
+        duration: music.duration,
+        vocalGender: music.vocalGender,
       };
+    }
     default:
       return base;
   }
@@ -512,14 +532,31 @@ function buildTaskRequest(input: Exclude<GenerateRequest, { action: "text" }>, m
     case "voice":
       return { action: "voice", model: m, text: input.text, style: input.style, voice: input.voice };
     case "music":
-      return {
-        action: "music",
-        model: m,
-        prompt: input.prompt,
-        instrumental: input.instrumental,
-        lyrics: input.lyrics,
-        title: input.title,
-        duration: input.duration,
-      };
+      return { action: "music", model: m, prompt: input.prompt, title: input.title, ...musicFields(input) };
   }
+}
+
+/**
+ * Поля музыки, которые уходят в шлюз и в jobs.params. Suno (kie) принимает длину (duration, 10–360 с)
+ * и голос (vocal_gender) только в custom-режиме: шлюз включает его, когда есть свой текст песни или
+ * instrumental: true. Поэтому:
+ *   • без вокала — текст песни не отправляем (иначе шлюз соберёт песню с вокалом), голос тоже;
+ *   • duration — только в custom-режиме; vocalGender — только для песни со своим текстом;
+ *   • простой режим («опиши песню») — ни длины, ни голоса: kie их там не принимает.
+ */
+function musicFields(input: Extract<GenerateRequest, { action: "music" }>): {
+  instrumental?: boolean;
+  lyrics?: string;
+  duration?: number;
+  vocalGender?: "m" | "f";
+} {
+  const instrumental = input.instrumental === true;
+  const lyrics = instrumental ? undefined : input.lyrics;
+  const custom = musicCustomMode({ instrumental, lyrics });
+  return {
+    ...(input.instrumental !== undefined ? { instrumental: input.instrumental } : {}),
+    ...(lyrics ? { lyrics } : {}),
+    ...(custom && input.duration !== undefined ? { duration: input.duration } : {}),
+    ...(lyrics && input.vocalGender ? { vocalGender: input.vocalGender } : {}),
+  };
 }

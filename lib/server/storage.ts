@@ -12,8 +12,9 @@ import {
 } from "@/lib/server/media-refs";
 import { MIN_STEP_MS, msLeft } from "@/lib/server/deadline";
 import { createSignedUrlCache, type SignedEntry } from "@/lib/server/signed-url-cache";
+import { createDriverDurationCache, fetchRange } from "@/lib/server/motion-driver";
 import { createAdminClient, createAdminClientUntil } from "@/lib/server/supabase/admin";
-import type { MediaKind } from "@/lib/platform/generation-types";
+import { lipsyncAudioVerdict, STUDENT_LIPSYNC_MAX_SEC, type MediaKind } from "@/lib/platform/generation-types";
 
 /*
   Приватный бакет media: загрузка результатов и подписанные ссылки. Пишет и подписывает только
@@ -224,16 +225,24 @@ export async function resolveReferences(
   return { ok: true, refs: { urls, stored } };
 }
 
-// ---------- озвучка для «говорящей головы» (ученик) ----------
+// ---------- озвучка для «говорящей головы» ----------
 
-/**
- * Kling AI Avatar берёт кредиты за каждую секунду аудио (до 5 минут), а цена в звёздах одна
- * (60★ ≈ 5 секунд). Поэтому ученику — только своя озвучка реплики (задача voice) до 15 секунд:
- * урок 2 и так режет длинный текст на куски по 10–15 с.
- */
-export const STUDENT_LIPSYNC_MAX_SEC = 15;
-/** Если длину файла не узнать (не WAV): текст реплики не длиннее ~15 секунд речи. */
-const STUDENT_LIPSYNC_MAX_TEXT = 220;
+/*
+  Kling AI Avatar берёт кредиты за каждую секунду аудио (до 5 минут, ≈ 8,7 кредита/с), а цена
+  в звёздах одна. Поэтому ученику — только своя озвучка реплики (задача voice) не длиннее
+  STUDENT_LIPSYNC_MAX_SEC (lib/platform/generation-types.ts) с допуском 0,5 с. Ведущему — без потолка.
+  Длину читаем по заголовку WAV: один Range-запрос на первые 4 КБ по подписанной ссылке.
+  Результат озвучки после сохранения не меняется, поэтому длина кешируется по пути файла
+  (известная — час, «не узнать» — минуту; кеш — тот же, что у образцов движения).
+*/
+
+/** Если длину файла не узнать (не WAV, сбой сети): текст реплики не длиннее ≈ 14,5 знака на секунду речи. */
+export const STUDENT_LIPSYNC_MAX_TEXT = Math.round(STUDENT_LIPSYNC_MAX_SEC * 14.5);
+/** Сколько озвучек за один рендер страницы урока меряем для плиток (самые новые). */
+export const VOICE_SECONDS_PER_RENDER = 12;
+const WAV_HEAD_BYTES = 4096;
+/** Версия для кеша длин: файл результата не перезаписывается, известная длина живёт час. */
+const IMMUTABLE = "immutable";
 
 /** Длительность WAV по заголовку (первые байты файла) и полному размеру. null — не WAV. */
 export function wavDurationSec(head: Uint8Array, totalBytes: number | null): number | null {
@@ -256,34 +265,64 @@ export function wavDurationSec(head: Uint8Array, totalBytes: number | null): num
   return null;
 }
 
-async function audioDurationSec(path: string): Promise<number | null> {
-  const signed = await signMediaPaths([path], 60);
-  const url = signed.get(path);
-  if (!url) return null;
-  try {
-    const response = await fetch(url, { headers: { Range: "bytes=0-4095" }, cache: "no-store", signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return null;
-    // полный размер: из Content-Range (ответ 206) или Content-Length (если Range проигнорирован)
-    const range = /\/(\d+)$/.exec(response.headers.get("content-range") ?? "");
-    const total = range ? Number(range[1]) : response.status === 200 ? Number(response.headers.get("content-length")) : NaN;
-    const head = new Uint8Array(await response.arrayBuffer()).slice(0, 4096);
-    return wavDurationSec(head, Number.isFinite(total) && total > 0 ? total : null);
-  } catch {
-    return null;
-  }
+/** Длина WAV по ссылке, секунды. null — не WAV, сеть, нет ответа. Ссылку не логируем: в ней токен. */
+export async function measureWavSeconds(url: string): Promise<number | null> {
+  const chunk = await fetchRange(url, 0, WAV_HEAD_BYTES);
+  if (!chunk) return null;
+  return wavDurationSec(chunk.bytes, chunk.total);
 }
 
-/** Озвучка ученика для lipsync: своя или группы (уже проверено resolveReferences), задача voice, до 15 секунд. */
-export async function checkStudentLipsyncAudio(path: string): Promise<boolean> {
-  if (isLibraryPath(path)) return true; // библиотеку курса кладёт админ
-  const parsed = parseJobMediaPath(path);
-  if (!parsed) return false;
+const voiceDurations = createDriverDurationCache({ measure: measureWavSeconds });
+
+/** Длина озвучки по пути в бакете и ссылке на неё (через кеш). */
+export function voiceSeconds(path: string, url: string): Promise<number | null> {
+  return voiceDurations.get(path, url, IMMUTABLE);
+}
+
+/**
+ * Длины озвучек для плиток выбора: не больше VOICE_SECONDS_PER_RENDER файлов (самые новые — первыми
+ * в списке), по 4 параллельно; остальные — без длины (плитка доступна, решает сервер).
+ */
+export async function voiceSecondsFor(files: { path: string; url: string }[]): Promise<Map<string, number | null>> {
+  const picked = files.slice(0, VOICE_SECONDS_PER_RENDER);
+  const result = new Map<string, number | null>();
+  let next = 0;
+  const worker = async () => {
+    while (next < picked.length) {
+      const file = picked[next++];
+      result.set(file.path, await voiceSeconds(file.path, file.url));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, picked.length) }, worker));
+  return result;
+}
+
+export type LipsyncAudioCheck =
+  | { ok: true; seconds: number | null }
+  | { ok: false; seconds: number | null; reason: "too_long" | "not_voice" };
+
+/**
+ * Озвучка для lipsync. path — путь в бакете (права уже проверил resolveReferences) или https-ссылка
+ * ведущего; url — подписанная ссылка на этот файл. Ведущему — без потолка, длина только для журнала.
+ * Ученику: библиотека курса — можно; иначе только результат задачи voice не длиннее потолка;
+ * длину не узнать — правило длины текста реплики (STUDENT_LIPSYNC_MAX_TEXT).
+ */
+export async function checkLipsyncAudio(input: { staff: boolean; path: string; url: string }): Promise<LipsyncAudioCheck> {
+  const external = !input.path || input.path.startsWith("https://");
+  const measure = () => (external || !input.url ? Promise.resolve(null) : voiceSeconds(input.path, input.url));
+  if (input.staff) return { ok: true, seconds: await measure() };
+  if (isLibraryPath(input.path)) return { ok: true, seconds: await measure() }; // библиотеку курса кладёт админ
+  const parsed = parseJobMediaPath(input.path);
+  if (!parsed) return { ok: false, seconds: null, reason: "not_voice" };
   const { data, error } = await createAdminClient().from("jobs").select("action, prompt").eq("id", parsed.jobId).maybeSingle();
-  if (error) throw new Error(`storage.checkStudentLipsyncAudio failed (${error.code})`);
-  if (!data || data.action !== "voice") return false;
-  const seconds = await audioDurationSec(path);
-  if (seconds !== null) return seconds <= STUDENT_LIPSYNC_MAX_SEC + 0.5;
-  return (data.prompt ?? "").length <= STUDENT_LIPSYNC_MAX_TEXT;
+  if (error) throw new Error(`storage.checkLipsyncAudio failed (${error.code})`);
+  if (!data || data.action !== "voice") return { ok: false, seconds: null, reason: "not_voice" };
+  const seconds = await measure();
+  if (seconds !== null) {
+    return lipsyncAudioVerdict(seconds, false) === "ok" ? { ok: true, seconds } : { ok: false, seconds, reason: "too_long" };
+  }
+  if ((data.prompt ?? "").length <= STUDENT_LIPSYNC_MAX_TEXT) return { ok: true, seconds: null };
+  return { ok: false, seconds: null, reason: "too_long" };
 }
 
 function put(target: ReferenceInput, slot: ReferenceSlot, value: string) {

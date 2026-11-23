@@ -7,8 +7,10 @@ import { useReferenceTray } from "@/components/platform/GenerateClient";
 import { buttonClass, hintClass, inputClass, labelClass } from "@/components/platform/ui";
 import {
   formatDriverSeconds,
+  lipsyncAudioVerdict,
   MOTION_DRIVER_MAX_SEC,
   motionDriverVerdict,
+  STUDENT_LIPSYNC_MAX_SEC,
   type JobAction,
   type MediaKind,
   type MediaOption,
@@ -21,8 +23,10 @@ import {
  * известной задачи (библиотека курса, старые отметки в галерее) тогда не показываются.
  * Звук (озвучка, музыка) можно послушать до выбора: кнопка «Послушать» на плитке, один плеер
  * на панель — новый включился, старый замолчал; панель закрылась — звук остановился.
- * Образцы движения из библиотеки показывают длину («10 с»). Длиннее MOTION_DRIVER_MAX_SEC — плитка
- * погашена и подписана: сервер такой образец не пустит. Длина неизвестна — погашена только у ученика.
+ * Образцы движения из библиотеки и озвучки показывают длину («10 с», «14 с»). lengthLimit — чей потолок:
+ * motion — длиннее MOTION_DRIVER_MAX_SEC плитка погашена и подписана (сервер такой образец не пустит);
+ * lipsync — у ученика погашена озвучка длиннее STUDENT_LIPSYNC_MAX_SEC; длина неизвестна — плитка
+ * доступна, решает сервер.
  */
 export function GenerateReferencePicker({
   label,
@@ -36,6 +40,7 @@ export function GenerateReferencePicker({
   allowUrl = false,
   emptyText,
   staff = false,
+  lengthLimit,
 }: {
   label: string;
   hint?: string;
@@ -47,8 +52,10 @@ export function GenerateReferencePicker({
   onChange: (paths: string[]) => void;
   allowUrl?: boolean;
   emptyText?: string;
-  /** ведущий: образец неизвестной длины можно выбрать (он проверяет новые образцы) */
+  /** ведущий: образец неизвестной длины можно выбрать (он проверяет новые образцы), озвучка — любой длины */
   staff?: boolean;
+  /** потолок длины файла: образец движения или озвучка для говорящей головы */
+  lengthLimit?: "motion" | "lipsync";
 }) {
   const id = useId();
   const tray = useReferenceTray();
@@ -90,7 +97,7 @@ export function GenerateReferencePicker({
             const order = value.indexOf(option.path) + 1;
             const audio = option.kind === "audio";
             const label = trayPaths.has(option.path) && !known.has(option.path) ? "Из галереи" : option.label;
-            const blocked = driverBlock(option, staff);
+            const blocked = lengthBlock(option, staff, lengthLimit);
             const title = blocked ?? (audio && option.text ? `${option.text} — ${label}` : label);
             return (
               // кнопка «Послушать» — сосед кнопки выбора, не внутри: вложенные кнопки недопустимы,
@@ -187,9 +194,12 @@ export function GenerateReferencePicker({
   );
 }
 
-/** Почему образец движения нельзя выбрать (подпись на плитке) или null. */
-function driverBlock(option: MediaOption, staff: boolean): string | null {
-  if (option.seconds === undefined) return null;
+/** Почему файл нельзя выбрать по длине (подпись на плитке) или null. */
+function lengthBlock(option: MediaOption, staff: boolean, limit: "motion" | "lipsync" | undefined): string | null {
+  if (option.seconds === undefined || !limit) return null;
+  if (limit === "lipsync") {
+    return lipsyncAudioVerdict(option.seconds, staff) === "too_long" ? `Длиннее ${STUDENT_LIPSYNC_MAX_SEC} с` : null;
+  }
   const verdict = motionDriverVerdict(option.seconds, staff);
   if (verdict === "too_long") return `Длиннее ${MOTION_DRIVER_MAX_SEC} с`;
   if (verdict === "unknown") return "Длина не проверена";

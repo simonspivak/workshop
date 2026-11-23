@@ -4,7 +4,16 @@
 // не сбрасывало форму. Сам текст запроса хранится выше, в LessonTaskTools.
 // Только данные и чистые функции — без React и без серверного кода.
 
-import { ASPECT_RATIOS, VOICE_IDS, type AspectRatio, type VoiceId } from "@/lib/platform/generation-types";
+import {
+  ASPECT_RATIOS,
+  MUSIC_DEFAULT_DURATION,
+  MUSIC_DURATION_OPTIONS,
+  MUSIC_VOCAL_OPTIONS,
+  VOICE_IDS,
+  type AspectRatio,
+  type MusicVocal,
+  type VoiceId,
+} from "@/lib/platform/generation-types";
 
 export type GenerateFormDraft = {
   model: string;
@@ -20,6 +29,10 @@ export type GenerateFormDraft = {
   instrumental: boolean;
   lyrics: string;
   title: string;
+  /** музыка: длина трека, секунды (MUSIC_DURATION_OPTIONS) */
+  musicDuration: number;
+  /** музыка: голос песни со своим текстом */
+  vocal: MusicVocal;
 };
 
 /** Что известно форме сейчас: по этому черновик из хранилища проверяется перед восстановлением. */
@@ -60,6 +73,8 @@ export function defaultFormDraft(defaultModel: string): GenerateFormDraft {
     instrumental: false,
     lyrics: "",
     title: "",
+    musicDuration: MUSIC_DEFAULT_DURATION,
+    vocal: "any",
   };
 }
 
@@ -101,6 +116,8 @@ export function sanitizeFormDraft(raw: unknown, ctx: FormDraftContext): Generate
     instrumental: r.instrumental === true,
     lyrics: text(r.lyrics, LYRICS_MAX),
     title: text(r.title, TITLE_MAX),
+    musicDuration: MUSIC_DURATION_OPTIONS.some((o) => o.seconds === r.musicDuration) ? (r.musicDuration as number) : base.musicDuration,
+    vocal: MUSIC_VOCAL_OPTIONS.some((o) => o.id === r.vocal) ? (r.vocal as MusicVocal) : base.vocal,
   };
 }
 

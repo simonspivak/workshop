@@ -6,7 +6,7 @@ import { JOB_COLUMNS, toJobViews, type JobRecord } from "@/lib/server/job-progre
 import { MEDIA_BUCKET } from "@/lib/server/jobs";
 import { mediaKindOfPath } from "@/lib/server/media-refs";
 import { libraryDriverSeconds } from "@/lib/server/motion-driver";
-import { forgetSignedUrls, listLibrary, MOTION_LIBRARY_FOLDER, signMediaPaths } from "@/lib/server/storage";
+import { forgetSignedUrls, listLibrary, MOTION_LIBRARY_FOLDER, signMediaPaths, voiceSecondsFor } from "@/lib/server/storage";
 import { lineText } from "@/lib/server/studio";
 import { createAdminClient } from "@/lib/server/supabase/admin";
 import { createClient } from "@/lib/server/supabase/server";
@@ -299,8 +299,11 @@ const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "sho
 /**
  * Готовые файлы, которые пользователь может подставить в генерацию: свои (последние 40)
  * и, если ведущий открыл общую галерею, файлы группы (последние 20).
+ * voiceSeconds — в уроке есть «говорящая голова»: у самых новых озвучек (не больше
+ * VOICE_SECONDS_PER_RENDER, storage.ts) узнаём длину по заголовку WAV — плитка покажет «14 с»
+ * и погасится, если озвучка длиннее потолка. Длины кешируются по пути файла.
  */
-export async function listReferenceOptions(user: SessionUser): Promise<MediaOption[]> {
+export async function listReferenceOptions(user: SessionUser, options: { voiceSeconds?: boolean } = {}): Promise<MediaOption[]> {
   const supabase = await createClient();
   const own = supabase
     .from("jobs")
@@ -343,6 +346,13 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
     row.storage_path ? [row.storage_path, ...row.extra_paths].map((path, index) => ({ row, path, index })) : [],
   );
   const signed = await signMediaPaths(files.map((f) => f.path));
+  const voices = options.voiceSeconds
+    ? files
+        .filter(({ row, path }) => row.action === "voice" && signed.has(path) && mediaKindOfPath(path) === "audio")
+        .sort((a, b) => Date.parse(b.row.created_at) - Date.parse(a.row.created_at))
+        .map(({ path }) => ({ path, url: signed.get(path) as string }))
+    : [];
+  const seconds = voices.length ? await voiceSecondsFor(voices) : new Map<string, number | null>();
   return files.flatMap(({ row, path, index }) => {
     const url = signed.get(path);
     const kind = mediaKindOfPath(path);
@@ -358,6 +368,7 @@ export async function listReferenceOptions(user: SessionUser): Promise<MediaOpti
         label: `${who}${jobActionLabels[row.action]} · ${shortDate.format(new Date(row.created_at))}${extra}`,
         action: row.action,
         ...(text ? { text } : {}),
+        ...(seconds.has(path) ? { seconds: seconds.get(path) ?? null } : {}),
       },
     ];
   });
