@@ -25,6 +25,10 @@
   - Системный промпт бота доходит до модели целиком, до 16 000 знаков. Раньше «Build KIE Request» резал его до 4000: «характер» обрывалась, текст «Ответы по моему тексту» до модели не доходил.
   - Формат кадра принимается только из списка: 9:16, 16:9, 1:1, 3:4, 4:3, auto, adaptive. Голос озвучки — только имя голоса. Всё прочее заменяется значением по умолчанию.
 - **Тайм-ауты.** KIE POST — 40 с, KIE GET — 12 с. Платформа ждёт дольше: текст — 50 с (с 16 ноября — 42 с, см. «Ошибки шлюза и повторы»), создание задачи — 45 с, статус — 15 с (`lib/server/gateway.ts`). Так платформа не вернёт звёзды за задачу, которую kie всё-таки создал.
+- **Вторая модель озвучки ElevenLabs V3 (26 ноября 2026).** 25 ноября `google/gemini-3-8-flash-tts` у kie весь день отвечал `generate task timeout` (код 524). «Доработка запроса» собирает запрос к `elevenlabs/text-to-dialogue-v3` тем же приёмом, что и Kimi: «Build KIE Request» отклоняет модель как неизвестную уже после проверки ключа.
+  - Тело: `{ model, input: { dialogue: [{ text, voice: <ID голоса> }], stability: 0.5 } }`, `language_code` не задаём (автоопределение). Документация: `docs.kie.ai/market/elevenlabs/text-to-dialogue-v3.md`.
+  - Живой запрос 26 ноября: русская реплика 100 знаков с тегами `[excitedly]` и `[whispering]`, голос Liam — mp3 за 9 с, 1,4 кредита (14 кредитов за 1000 знаков).
+  - Результат — mp3, не wav: длину для «говорящей головы» платформа считает по длине текста (до 290 знаков), а не по заголовку файла.
 - **Запасная текстовая модель Kimi K3.** «Доработка запроса» собирает запрос к `kimi-k3` (OpenAI Responses, `POST /openai/v1/responses`, `reasoning.effort: low`), когда платформа просит эту модель. «Build KIE Request» отклоняет её как неизвестную уже после проверки ключа. «Normalize Response» берёт данные запроса из «Доработки запроса».
   - Проверено живым запросом 5 ноября: 4 с, 0,72 кредита за короткий ответ.
   - В тот день у Haiku на kie было ~10% успешных ответов, у Kimi — ~95%.
@@ -141,7 +145,7 @@ HTTP-статус ответа остаётся **502** (как сейчас в 
 | `video` | `bytedance/seedance-2-mini`, `bytedance/seedance-2-5`, `wan/3-0-video`, `wan/3-0-video-prime`, `kling-4.0/reference-to-video` | есть, необязательное |
 | `motion` | `kling-2.6/motion-control`, `wan/2-2-animate-move` | есть, необязательное (у `kling-3.0/motion-control`, которого нет в шлюзе, — обязательное) |
 | `lipsync` | `kling/ai-avatar-standard`, `infinitalk/from-audio` | есть, необязательное |
-| `voice` | `google/gemini-3-8-flash-tts` | есть, необязательное |
+| `voice` | `google/gemini-3-8-flash-tts`, `elevenlabs/text-to-dialogue-v3` | есть, необязательное |
 | `music` | `ai-music-api/generate` (Suno) | есть, необязательное. Вызовов может быть до трёх: `callbackType` `text`, `first`, `complete`, гарантирован только `complete` |
 | `text` | все | нет (синхронный ответ, обратный вызов не нужен) |
 
@@ -349,6 +353,7 @@ if (out.route === 'create' && out.action === 'music' && music && typeof music ==
 | `motion` | `kling-2.6/motion-control`, `wan/2-2-animate-move` | `images[0]` (персонаж), `video` (видео-драйвер с движением) | `prompt` |
 | `lipsync` | `kling/ai-avatar-standard`, `infinitalk/from-audio` | `images[0]`, `audio` | `prompt` |
 | `voice` | `google/gemini-3-8-flash-tts` | `text` | `style` (манера речи), `voice` (по умолчанию `Kore`) |
+| `voice` | `elevenlabs/text-to-dialogue-v3` | `text` (до 3000 знаков) | `voice` — имя из 20 голосов (по умолчанию `Sarah`), шлюз меняет его на ID. `style` не действует: эмоции — тегами в тексте, `[excitedly]` |
 | `music` | `ai-music-api/generate` (Suno V6 Mini) | `prompt` | `instrumental: true`, `lyrics`, `title`; только в custom-режиме (`lyrics` или `instrumental: true`): `duration` (10–120 с; Build режет до 60, до 120 — «Доработка запроса»), `vocalGender` (`m` \| `f`, только с `lyrics`, раздел «Музыка: длина и голос») |
 | `status` | — | `taskId` | — |
 | `balance` | — | — | — |

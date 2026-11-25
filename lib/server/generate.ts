@@ -27,7 +27,15 @@ import { canUse, LONG_TEXT_TOKENS } from "@/lib/server/prices";
 import { checkLipsyncAudio, resolveReferences } from "@/lib/server/storage";
 import type { Json } from "@/lib/server/supabase/types";
 import { createJobWithDebit, refundJob, type WalletError } from "@/lib/server/wallet";
-import { ASPECT_RATIOS, MUSIC_MAX_DURATION, musicCustomMode, VOICE_IDS, type JobView } from "@/lib/platform/generation-types";
+import {
+  ASPECT_RATIOS,
+  MUSIC_MAX_DURATION,
+  musicCustomMode,
+  VOICE_IDS,
+  voiceForModel,
+  voiceTakesStyle,
+  type JobView,
+} from "@/lib/platform/generation-types";
 import type { GenerationErrorCode } from "@/lib/platform/generation-messages";
 import type { ErrorCode } from "@/lib/platform/messages";
 
@@ -161,8 +169,8 @@ const WALLET_STATUS: Record<WalletError, number> = {
 };
 
 /**
- * Озвучка ученика — до 600 символов (~40 секунд речи): Gemini TTS у kie оплачивается по длине
- * аудио, а цена в звёздах одна. Реплики в уроке — до 10 слов. Ведущему — как в схеме (2000).
+ * Озвучка ученика — до 600 символов (~40 секунд речи): kie берёт по длине (Gemini TTS — за аудио,
+ * ElevenLabs V3 — 14 кредитов за 1000 знаков, 600 знаков ≈ 8,4 кредита), а цена в звёздах одна. Реплики в уроке — до 10 слов. Ведущему — как в схеме (2000).
  */
 const STUDENT_VOICE_MAX_CHARS = 600;
 // Другие потолки по длине (lib/platform/generation-types.ts): образец переноса движения —
@@ -310,7 +318,7 @@ export async function startGeneration(user: SessionUser, input: GenerateRequest)
     idempotencyKey: input.idempotencyKey,
     // callback: шлюзу уйдёт адрес обратного вызова — опрос этой задачи пойдёт по редкому расписанию
     params: {
-      ...jobParams(input, references.refs.stored),
+      ...jobParams(input, references.refs.stored, decision.model),
       ...(callbackPlanned(input.action) ? { callback: true } : {}),
       // длина образца движения: по ней видно, сколько кредитов kie ушло на задачу
       ...(driverSeconds !== null ? { driverSeconds: Math.round(driverSeconds * 100) / 100 } : {}),
@@ -465,7 +473,7 @@ function referenceInput(input: GenerateRequest): ReferenceInput {
 }
 
 /** Что сохранить в jobs.params: настройки и пути референсов (не подписанные ссылки). */
-function jobParams(input: GenerateRequest, refs: ReferenceInput): Record<string, Json | undefined> {
+function jobParams(input: GenerateRequest, refs: ReferenceInput, model: string): Record<string, Json | undefined> {
   const base: Record<string, Json | undefined> = { refs: refs as Json };
   switch (input.action) {
     case "text":
@@ -482,7 +490,7 @@ function jobParams(input: GenerateRequest, refs: ReferenceInput): Record<string,
         audio: input.audio ?? false,
       };
     case "voice":
-      return { ...base, voice: input.voice, style: input.style };
+      return { ...base, voice: voiceForModel(model, input.voice), style: voiceTakesStyle(model) ? input.style : undefined };
     case "music": {
       const music = musicFields(input);
       return {
@@ -530,7 +538,14 @@ function buildTaskRequest(input: Exclude<GenerateRequest, { action: "text" }>, m
     case "lipsync":
       return { action: "lipsync", model: m, images: [urls.images![0]], audio: urls.audio!, prompt: input.prompt };
     case "voice":
-      return { action: "voice", model: m, text: input.text, style: input.style, voice: input.voice };
+      // голос — из списка своей модели; манера речи — только там, где модель её понимает
+      return {
+        action: "voice",
+        model: m,
+        text: input.text,
+        style: voiceTakesStyle(model) ? input.style : undefined,
+        voice: voiceForModel(model, input.voice),
+      };
     case "music":
       return { action: "music", model: m, prompt: input.prompt, title: input.title, ...musicFields(input) };
   }

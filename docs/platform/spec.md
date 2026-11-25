@@ -46,7 +46,8 @@
 | image / image_edit | flux-3/klein-text-to-image, flux-3/klein-edit-image | 2 | все |
 | image / image_edit | nano-banana-2-1 | 5 | adult; младшим — только если в группе включено `allow_google_minors` |
 | video | bytedance/seedance-2-mini, 480p, 5 с | 25 (10 с — 50) | все |
-| voice | google/gemini-3-8-flash-tts | 2 | adult; младшим — только с `allow_google_minors` |
+| voice | elevenlabs/text-to-dialogue-v3 | 5 | все. Эмоции — тегами в тексте (`[excitedly]`), поля «Манера речи» нет |
+| voice | google/gemini-3-8-flash-tts | 2 | adult; младшим — только с `allow_google_minors`. Запасная |
 | music | ai-music-api/generate | 15 | все |
 | motion | kling-2.6/motion-control | 70 | adult, или 16_17 с согласием, только драйверы из библиотеки курса |
 | lipsync | kling/ai-avatar-standard | 60 | adult |

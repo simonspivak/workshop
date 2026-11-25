@@ -26,7 +26,10 @@ import {
   MUSIC_VOCAL_OPTIONS,
   musicCustomMode,
   STUDENT_LIPSYNC_MAX_SEC,
-  VOICE_OPTIONS,
+  ELEVEN_TAGS,
+  voiceForModel,
+  voiceOptionsFor,
+  voiceTakesStyle,
   type AspectRatio,
   type GenerateActionOption,
   type JobView,
@@ -121,6 +124,22 @@ export function GeneratePanel({
   const { model, aspect, images, driver, voiceTrack, referenceMode, duration, sound, voice, style, instrumental, lyrics, title, musicDuration, vocal } =
     draft;
   const patch = (next: Partial<GenerateFormDraft>) => setDraft((current) => ({ ...current, ...next }));
+  // Тег эмоции (ElevenLabs) — в место курсора в «Текст реплики», с пробелом после; не длиннее поля
+  const insertTag = (tag: string) => {
+    const field = promptRef?.current;
+    const at = field && document.activeElement === field ? field.selectionStart : null;
+    const start = at ?? (field ? field.selectionStart : prompt.length);
+    const head = prompt.slice(0, start);
+    const tail = prompt.slice(start);
+    const piece = `${head && !/\s$/.test(head) ? " " : ""}${tag} `;
+    const next = (head + piece + tail.replace(/^ +/, "")).slice(0, limit);
+    onPromptChange(next);
+    const caret = Math.min(head.length + piece.length, next.length);
+    requestAnimationFrame(() => {
+      field?.focus();
+      field?.setSelectionRange(caret, caret);
+    });
+  };
   const [pending, setPending] = useState(false);
   // Переписка текстового задания: хранится в браузере, уходит в запрос как история
   const threadKey = action === "text" ? `iis-thread:${lessonId ?? "-"}:${taskId ?? "-"}:${option.key}` : null;
@@ -198,7 +217,7 @@ export function GeneratePanel({
         Object.assign(body, { images, audio: voiceTrack[0], prompt: text || undefined });
         break;
       case "voice":
-        Object.assign(body, { text, voice, style: style.trim() || undefined });
+        Object.assign(body, { text, voice: voiceForModel(model, voice), style: voiceTakesStyle(model) ? style.trim() || undefined : undefined });
         break;
       case "music": {
         const songLyrics = instrumental ? undefined : lyrics.trim() || undefined;
@@ -421,6 +440,28 @@ export function GeneratePanel({
           className={`${inputClass} mt-2 font-normal`}
         />
         <p className={hintClass}>Без имён реальных людей и без личных данных: телефонов, адресов, e-mail.</p>
+        {action === "voice" && !voiceTakesStyle(model) && (
+          <div className="mt-3">
+            <p className="text-sm font-semibold text-ink">Эмоция — тегом в тексте</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {ELEVEN_TAGS.map((t) => (
+                <button
+                  key={t.tag}
+                  type="button"
+                  onClick={() => insertTag(t.tag)}
+                  title={`Вставить ${t.tag}`}
+                  className="min-h-11 rounded-full border border-ink/20 bg-white px-3 text-sm text-ink hover:border-violet hover:text-violet"
+                >
+                  {t.label} <span className="font-mono text-xs text-ink-soft">{t.tag}</span>
+                </button>
+              ))}
+            </div>
+            <p className={hintClass}>
+              Тег — английское слово в квадратных скобках. Голос его не читает, а играет: слова после тега звучат с этой эмоцией. Хватит
+              одного-двух на реплику.
+            </p>
+          </div>
+        )}
       </div>
 
       {action === "voice" && (
@@ -429,27 +470,34 @@ export function GeneratePanel({
             <label htmlFor={`${id}-voice`} className={labelClass}>
               Голос
             </label>
-            <select id={`${id}-voice`} value={voice} onChange={(e) => patch({ voice: e.target.value as VoiceId })} className={`${inputClass} mt-2`}>
-              {VOICE_OPTIONS.map((v) => (
+            <select
+              id={`${id}-voice`}
+              value={voiceForModel(model, voice)}
+              onChange={(e) => patch({ voice: e.target.value as VoiceId })}
+              className={`${inputClass} mt-2`}
+            >
+              {voiceOptionsFor(model).map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
                 </option>
               ))}
             </select>
           </div>
-          <div>
-            <label htmlFor={`${id}-style`} className={labelClass}>
-              Манера речи
-            </label>
-            <input
-              id={`${id}-style`}
-              value={style}
-              onChange={(e) => patch({ style: e.target.value })}
-              maxLength={STYLE_MAX}
-              placeholder="Например: с иронией, быстро, шёпотом"
-              className={`${inputClass} mt-2`}
-            />
-          </div>
+          {voiceTakesStyle(model) && (
+            <div>
+              <label htmlFor={`${id}-style`} className={labelClass}>
+                Манера речи
+              </label>
+              <input
+                id={`${id}-style`}
+                value={style}
+                onChange={(e) => patch({ style: e.target.value })}
+                maxLength={STYLE_MAX}
+                placeholder="Например: с иронией, быстро, шёпотом"
+                className={`${inputClass} mt-2`}
+              />
+            </div>
+          )}
         </div>
       )}
 

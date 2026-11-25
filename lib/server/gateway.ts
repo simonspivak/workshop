@@ -38,7 +38,8 @@ export const GATEWAY_MODELS = {
   ],
   motion: ["kling-2.6/motion-control", "wan/2-2-animate-move"],
   lipsync: ["kling/ai-avatar-standard", "infinitalk/from-audio"],
-  voice: ["google/gemini-3-8-flash-tts"],
+  // ElevenLabs V3 шлюз собирает в «Доработке запроса» (docs/kie-gateway.md): эмоции — тегами в тексте, [excitedly]
+  voice: ["google/gemini-3-8-flash-tts", "elevenlabs/text-to-dialogue-v3"],
   music: ["ai-music-api/generate"],
 } as const;
 
@@ -114,9 +115,9 @@ export type VoiceRequest = {
   action: "voice";
   model?: ModelFor<"voice">;
   text: string;
-  /** манера речи */
+  /** манера речи — только Gemini TTS; у ElevenLabs эмоции задают тегами в тексте */
   style?: string;
-  /** голос, по умолчанию Kore */
+  /** голос по имени: Gemini — по умолчанию Kore, ElevenLabs — Sarah */
   voice?: string;
 };
 export type MusicRequest = {
