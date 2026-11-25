@@ -15,7 +15,7 @@ const MODELS = {
   video: { "bytedance/seedance-2-mini": 25 },
   motion: { "kling-2.6/motion-control": 126 },
   lipsync: { "kling/ai-avatar-standard": 60 },
-  voice: { "google/gemini-3-8-flash-tts": 2 },
+  voice: { "elevenlabs/text-to-dialogue-v3": 5, "google/gemini-3-8-flash-tts": 2 },
   music: { "ai-music-api/generate": 15 },
   montage: { "platform/auto-montage": 0 },
 };

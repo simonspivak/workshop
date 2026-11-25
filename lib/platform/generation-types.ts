@@ -196,8 +196,69 @@ export const VOICE_OPTIONS = [
   { id: "Sulafat", label: "Sulafat — женский, тёплый" },
   { id: "Achird", label: "Achird — мужской, дружелюбный" },
 ] as const;
-export type VoiceId = (typeof VOICE_OPTIONS)[number]["id"];
-export const VOICE_IDS = VOICE_OPTIONS.map((v) => v.id) as [VoiceId, ...VoiceId[]];
+
+/** Вторая модель озвучки (26 ноября 2026): эмоции задают тегами в тексте, поля «Манера речи» у неё нет. */
+export const ELEVEN_VOICE_MODEL = "elevenlabs/text-to-dialogue-v3";
+
+/** Голоса ElevenLabs V3 на kie (docs.kie.ai/market/elevenlabs/text-to-dialogue-v3.md). Шлюз меняет имя на ID голоса. */
+export const ELEVEN_VOICE_OPTIONS = [
+  { id: "Sarah", label: "Sarah — женский, взрослый, уверенный" },
+  { id: "Liam", label: "Liam — мужской, энергичный, блогер" },
+  { id: "Daniel", label: "Daniel — мужской, ровный, как диктор" },
+  { id: "Alice", label: "Alice — женский, ясный, как учитель" },
+  { id: "George", label: "George — мужской, тёплый рассказчик" },
+  { id: "Jessica", label: "Jessica — женский, игривый, тёплый" },
+  { id: "Adam", label: "Adam — мужской, твёрдый" },
+  { id: "Bill", label: "Bill — мужской, зрелый, мудрый" },
+  { id: "Brian", label: "Brian — мужской, низкий, спокойный" },
+  { id: "Callum", label: "Callum — мужской, с хрипотцой" },
+  { id: "Charlie", label: "Charlie — мужской, уверенный, бодрый" },
+  { id: "Chris", label: "Chris — мужской, простой, обаятельный" },
+  { id: "Eric", label: "Eric — мужской, мягкий, надёжный" },
+  { id: "Harry", label: "Harry — мужской, резкий, воин" },
+  { id: "Laura", label: "Laura — женский, задорный" },
+  { id: "Lily", label: "Lily — женский, бархатный, актриса" },
+  { id: "Matilda", label: "Matilda — женский, деловой" },
+  { id: "River", label: "River — нейтральный, спокойный" },
+  { id: "Roger", label: "Roger — мужской, расслабленный" },
+  { id: "Will", label: "Will — мужской, спокойный оптимист" },
+] as const;
+
+export type VoiceId = (typeof VOICE_OPTIONS)[number]["id"] | (typeof ELEVEN_VOICE_OPTIONS)[number]["id"];
+export const VOICE_IDS = [...VOICE_OPTIONS, ...ELEVEN_VOICE_OPTIONS].map((v) => v.id) as [VoiceId, ...VoiceId[]];
+
+/** Список голосов модели озвучки. */
+export function voiceOptionsFor(model: string): readonly { id: VoiceId; label: string }[] {
+  return model === ELEVEN_VOICE_MODEL ? ELEVEN_VOICE_OPTIONS : VOICE_OPTIONS;
+}
+
+/** Голос для модели: выбранный, если он из её списка, иначе первый в списке (Kore или Sarah). */
+export function voiceForModel(model: string, voice: string | null | undefined): VoiceId {
+  const list = voiceOptionsFor(model);
+  return list.find((v) => v.id === voice)?.id ?? list[0].id;
+}
+
+/** Умеет ли модель озвучки отдельное поле «Манера речи» (Gemini — да, ElevenLabs — нет: теги в тексте). */
+export function voiceTakesStyle(model: string): boolean {
+  return model !== ELEVEN_VOICE_MODEL;
+}
+
+/**
+ * Теги эмоций ElevenLabs V3 для кнопок под полем реплики. Тег — английское слово в квадратных скобках:
+ * голос его не читает, а играет. Действует на слова после себя.
+ */
+export const ELEVEN_TAGS = [
+  { tag: "[excitedly]", label: "радостно" },
+  { tag: "[calm]", label: "спокойно" },
+  { tag: "[serious]", label: "серьёзно" },
+  { tag: "[curious]", label: "с интересом" },
+  { tag: "[sarcastic]", label: "с иронией" },
+  { tag: "[sad]", label: "грустно" },
+  { tag: "[whispers]", label: "шёпотом" },
+  { tag: "[laughs]", label: "смех" },
+  { tag: "[sighs]", label: "вздох" },
+  { tag: "[short pause]", label: "пауза" },
+] as const;
 
 /** Почему действие недоступно (коды из messages.ts и generation-messages.ts). */
 export type ActionDenied =
